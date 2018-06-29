@@ -1,6 +1,6 @@
 ﻿using System.Net.Sockets;
 
-namespace Dullahan
+namespace Dullahan.Comm
 {
 	/// <summary>
 	/// For reading client data

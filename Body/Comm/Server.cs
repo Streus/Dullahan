@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 
-namespace Dullahan
+namespace Dullahan.Comm
 {
 	/// <summary>
 	/// Handles communication between Dullhan Body (Unity side) and 
@@ -154,7 +154,7 @@ namespace Dullahan
 		/// </summary>
 		/// <param name="handler">The socket to send with</param>
 		/// <param name="data">the data to send</param>
-		private void Send(Socket handler, string data)
+		public void Send(Socket handler, string data)
 		{
 			byte[] bytes = Encoding.ASCII.GetBytes(data);
 
