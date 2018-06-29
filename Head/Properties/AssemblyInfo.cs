@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Dullahan Body")]
-[assembly: AssemblyDescription("The Unity integration half of Dullahan")]
+[assembly: AssemblyTitle("Head")]
+[assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("StreusMade")]
-[assembly: AssemblyProduct("DullahanBody")]
+[assembly: AssemblyCompany("")]
+[assembly: AssemblyProduct("Head")]
 [assembly: AssemblyCopyright("Copyright ©  2018")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("5df71543-7021-4d27-8a0a-45af5e9a8937")]
+[assembly: Guid("668fb8c1-3c04-4493-a81f-4406b7bfdb1b")]
 
 // Version information for an assembly consists of the following four values:
 //
