@@ -49,7 +49,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup>
-    <StartupObject>Head.Program</StartupObject>
+    <StartupObject>Dullahan.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />

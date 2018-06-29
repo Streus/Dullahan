@@ -25,6 +25,13 @@ namespace Dullahan
 
         #region INTERNAL_TYPES
 
+		/// <summary>
+		/// A data stream for information sent thtough the logging system.
+		/// </summary>
+		public class Channel
+		{
+
+		}
         #endregion
     }
 }

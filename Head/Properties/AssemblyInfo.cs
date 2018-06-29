@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Head")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("Dullahan Head")]
+[assembly: AssemblyDescription("CLI Client for Dullahan")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("Head")]
+[assembly: AssemblyCompany("StreusMade")]
+[assembly: AssemblyProduct("DullahanHead")]
 [assembly: AssemblyCopyright("Copyright ©  2018")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

@@ -1,8 +1,8 @@
 ﻿using System;
+using System.Collections;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using UnityEngine;
 
 namespace Dullahan
@@ -11,11 +11,15 @@ namespace Dullahan
 	/// Handles communication between Dullhan Body (Unity side) and 
 	/// Dullahan Head (CLI side).
 	/// </summary>
-	public class Server
+	[AddComponentMenu("Dullahan/Server"), DisallowMultipleComponent]
+	public class Server : MonoBehaviour
 	{
 		#region STATIC_VARS
 
-		// The default port that the server will run on
+		// The default IP the server will run on
+		public const string DEFAULT_IP = "127.0.0.1";
+
+		// The default port the server will run on
 		public const int DEFAULT_PORT = 8080;
 
 		// Marks the end of packets
@@ -26,9 +30,10 @@ namespace Dullahan
 
 		#region INSTANCE_VARS
 
-		private int Port { get; set; }
+		private bool running;
 
-		private ManualResetEvent finished;
+		[SerializeField]
+		private int port = DEFAULT_PORT;
 		#endregion
 
 		#region STATIC_METHODS
@@ -36,33 +41,44 @@ namespace Dullahan
 		public static Server GetInstance()
 		{
 			if (instance == null)
-				instance = new Server();
+			{
+				GameObject go = new GameObject("Dullahan Server");
+				instance = go.AddComponent<Server>();
+			}
 			return instance;
 		}
 		#endregion
 
 		#region INSTANCE_METHODS
 
-		private Server()
+		public void Awake()
 		{
-			Port = DEFAULT_PORT;
-
-			finished = new ManualResetEvent(false);
+			DontDestroyOnLoad(gameObject);
+			Run();
 		}
 
-		~Server()
+		public void OnDestroy()
 		{
-
+			// Clean up connections
+			running = false;
 		}
 
 		/// <summary>
-		/// 
+		/// Check the running state of the server
+		/// </summary>
+		/// <returns></returns>
+		public bool IsRunning()
+		{
+			return running;
+		}
+
+		/// <summary>
+		/// Entrypoint for running the server with its current configuration.
 		/// </summary>
 		public void Run()
 		{
-			IPHostEntry ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
-			IPAddress ip = ipHostInfo.AddressList[0];
-			IPEndPoint localEndPoint = new IPEndPoint(ip, Port);
+			IPAddress ip = IPAddress.Parse(DEFAULT_IP);
+			IPEndPoint localEndPoint = new IPEndPoint(ip, port);
 			Socket listener = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
 			try
@@ -70,15 +86,7 @@ namespace Dullahan
 				listener.Bind(localEndPoint);
 				listener.Listen(100);
 
-				while(true)
-				{
-					finished.Reset();
-
-					Debug.Log("Waiting for a connection...");
-					listener.BeginAccept(new AsyncCallback(AcceptConnection), listener);
-
-					finished.WaitOne(5000);
-				}
+				StartCoroutine(WaitForConnection(listener));
 			}
 			catch(Exception e)
 			{
@@ -86,47 +94,57 @@ namespace Dullahan
 			}
 		}
 
+		private IEnumerator WaitForConnection(Socket listener)
+		{
+			running = true;
+			while (running)
+			{
+				Debug.Log("Waiting for a connection...");
+				listener.BeginAccept(new AsyncCallback(AcceptCallback), listener);
+
+				yield return null;
+			}
+		}
+
 		/// <summary>
 		/// Callback for accepting a socket connection
 		/// </summary>
 		/// <param name="res"></param>
-		private void AcceptConnection(IAsyncResult res)
+		private void AcceptCallback(IAsyncResult res)
 		{
-			finished.Set();
-
 			Socket listener = (Socket)res.AsyncState;
 			Socket handler = listener.EndAccept(res);
 
-			State s = new State();
-			s.workSock = handler;
-			handler.BeginReceive(s.buffer, 0, State.BUFFER_SIZE, 0, new AsyncCallback(ReadConnection), s);
+			Packet pack = new Packet();
+			pack.workSock = handler;
+			handler.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReadCallback), pack);
 		}
 
 		/// <summary>
 		/// Callback for reading a socket connection
 		/// </summary>
 		/// <param name="res"></param>
-		private void ReadConnection(IAsyncResult res)
+		private void ReadCallback(IAsyncResult res)
 		{
 			string content = "";
-			State s = (State)res.AsyncState;
-			Socket handler = s.workSock;
+			Packet pack = (Packet)res.AsyncState;
+			Socket handler = pack.workSock;
 
 			int bytesRead = handler.EndReceive(res);
 
 			if(bytesRead > 0)
 			{
-				s.data += Encoding.ASCII.GetString(s.buffer, 0, bytesRead);
+				pack.data += Encoding.ASCII.GetString(pack.buffer, 0, bytesRead);
 
-				content = s.data;
+				content = pack.data;
 				if(content.IndexOf(EOF) > -1)
 				{
-					Debug.Log("Read " + content.Length + " bytes from socket.\ncontent=" + content);
+					Debug.Log("Read " + content.Length + "B from socket.\ncontent=" + content);
 					Send(handler, content);
 				}
 				else
 				{
-					handler.BeginReceive(s.buffer, 0, State.BUFFER_SIZE, 0, new AsyncCallback(ReadConnection), s);
+					handler.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReadCallback), pack);
 				}
 			}
 		}
@@ -140,23 +158,23 @@ namespace Dullahan
 		{
 			byte[] bytes = Encoding.ASCII.GetBytes(data);
 
-			handler.BeginSend(bytes, 0, bytes.Length, 0, new AsyncCallback(SendConnection), handler);
+			handler.BeginSend(bytes, 0, bytes.Length, 0, new AsyncCallback(SendCallback), handler);
 		}
 
 		/// <summary>
 		/// Callback for sending over a socket
 		/// </summary>
 		/// <param name="res"></param>
-		private void SendConnection(IAsyncResult res)
+		private void SendCallback(IAsyncResult res)
 		{
 			try
 			{
 				Socket handler = (Socket)res.AsyncState;
 
 				int bytesSent = handler.EndSend(res);
-				Debug.Log("Sent " + bytesSent + " to client.");
+				Debug.Log("Sent " + bytesSent + "B to client.");
 
-				handler.Shutdown(SocketShutdown.Both);
+				handler.Shutdown(SocketShutdown.Receive);
 				handler.Close();
 			}
 			catch(Exception e)
@@ -168,17 +186,7 @@ namespace Dullahan
 
 		#region INTERNAL_TYPES
 
-		/// <summary>
-		/// For reading client data
-		/// </summary>
-		public class State
-		{
-			public const int BUFFER_SIZE = 1024;
-
-			public Socket workSock = null;
-			public byte[] buffer;
-			public string data;
-		}
+		
 		#endregion
 	}
 }
