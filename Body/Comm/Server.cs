@@ -3,7 +3,9 @@ using System.Collections;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using UnityEngine;
+using Dullahan.Logging;
 
 namespace Dullahan.Comm
 {
@@ -30,10 +32,31 @@ namespace Dullahan.Comm
 
 		#region INSTANCE_VARS
 
-		private bool running;
+		/// <summary>
+		/// Indicates the state of the listening thread
+		/// </summary>
+		private volatile bool running;
+
+		/// <summary>
+		/// Data recieved from the client
+		/// </summary>
+		private string clientData;
+
+		/// <summary>
+		/// Indicates if there is data to be read from clientData
+		/// </summary>
+		private volatile bool unreadData;
+
+		/// <summary>
+		/// Used to lock clientData for the main Unity thread
+		/// </summary>
+		private object dataLock = new object ();
 
 		[SerializeField]
 		private int port = DEFAULT_PORT;
+
+		private TcpListener server;
+		private TcpClient client;
 		#endregion
 
 		#region STATIC_METHODS
@@ -54,22 +77,53 @@ namespace Dullahan.Comm
 		public void Awake()
 		{
 			DontDestroyOnLoad(gameObject);
+
+			if (instance == null)
+				instance = this;
+			else
+			{
+				Debug.LogError ("More than one Dullahan Server active! Destroying...");
+				Destroy (gameObject);
+			}
+
+			server = null;
+			client = null;
+
 			Run();
 		}
 
 		public void OnDestroy()
 		{
 			// Clean up connections
-			running = false;
+			lock (dataLock)
+				running = false;
 		}
 
 		/// <summary>
-		/// Check the running state of the server
+		/// Check the running state of the server. Thread safe.
 		/// </summary>
 		/// <returns></returns>
 		public bool IsRunning()
 		{
-			return running;
+			lock (dataLock)
+			{
+				return running;
+			}
+		}
+
+		public void Update()
+		{
+			//check on the listening thread
+			if (IsRunning ())
+			{
+				lock (dataLock)
+				{
+					if (unreadData)
+					{
+						int success = Log.InvokeCommand (clientData);
+					}
+				}
+			}
 		}
 
 		/// <summary>
@@ -78,108 +132,73 @@ namespace Dullahan.Comm
 		public void Run()
 		{
 			IPAddress ip = IPAddress.Parse(DEFAULT_IP);
-			IPEndPoint localEndPoint = new IPEndPoint(ip, port);
-			Socket listener = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+			server = new TcpListener (ip, port);
 
-			try
-			{
-				listener.Bind(localEndPoint);
-				listener.Listen(100);
-
-				StartCoroutine(WaitForConnection(listener));
-			}
-			catch(Exception e)
-			{
-				Debug.LogException(e);
-			}
-		}
-
-		private IEnumerator WaitForConnection(Socket listener)
-		{
+			server.Start ();
 			running = true;
-			while (running)
-			{
-				Debug.Log("Waiting for a connection...");
-				listener.BeginAccept(new AsyncCallback(AcceptCallback), listener);
 
-				yield return null;
+			Thread listeningThread = new Thread (Listen);
+		}
+
+		private void Listen()
+		{
+			byte[] bytes = new byte[Packet.BUFFER_SIZE];
+			lock (dataLock)
+			{
+				clientData = "";
+				unreadData = false;
 			}
-		}
 
-		/// <summary>
-		/// Callback for accepting a socket connection
-		/// </summary>
-		/// <param name="res"></param>
-		private void AcceptCallback(IAsyncResult res)
-		{
-			Socket listener = (Socket)res.AsyncState;
-			Socket handler = listener.EndAccept(res);
-
-			Packet pack = new Packet();
-			pack.workSock = handler;
-			handler.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReadCallback), pack);
-		}
-
-		/// <summary>
-		/// Callback for reading a socket connection
-		/// </summary>
-		/// <param name="res"></param>
-		private void ReadCallback(IAsyncResult res)
-		{
-			string content = "";
-			Packet pack = (Packet)res.AsyncState;
-			Socket handler = pack.workSock;
-
-			int bytesRead = handler.EndReceive(res);
-
-			if(bytesRead > 0)
+			//wait for client connection
+			NetworkStream stream;
+			lock (dataLock)
 			{
-				pack.data += Encoding.ASCII.GetString(pack.buffer, 0, bytesRead);
+				client = server.AcceptTcpClient ();
+				Debug.Log ("[DUL] Connection from client.");
+				stream = client.GetStream ();
+			}
 
-				content = pack.data;
-				if(content.IndexOf(EOF) > -1)
+			//read incoming traffic from client
+			while (IsRunning())
+			{
+				int i;
+				while ((i = stream.Read (bytes, 0, bytes.Length)) != 0)
 				{
-					Debug.Log("Read " + content.Length + "B from socket.\ncontent=" + content);
-					Send(handler, content);
+					lock (dataLock)
+						clientData = Encoding.ASCII.GetString (bytes, 0, i);
 				}
-				else
-				{
-					handler.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReadCallback), pack);
-				}
+				lock (dataLock)
+					unreadData = true;
+			}
+
+			//close connection
+			lock (dataLock)
+			{
+				client.Close ();
+				client = null;
 			}
 		}
 
 		/// <summary>
-		/// Send data over a socket
+		/// Send data to the currently connected client
 		/// </summary>
-		/// <param name="handler">The socket to send with</param>
-		/// <param name="data">the data to send</param>
-		public void Send(Socket handler, string data)
+		/// <param name="data"></param>
+		public void Send(string data)
 		{
-			byte[] bytes = Encoding.ASCII.GetBytes(data);
-
-			handler.BeginSend(bytes, 0, bytes.Length, 0, new AsyncCallback(SendCallback), handler);
+			if (client != null)
+			{
+				Thread pushThread = new Thread (Push);
+			}
 		}
 
-		/// <summary>
-		/// Callback for sending over a socket
-		/// </summary>
-		/// <param name="res"></param>
-		private void SendCallback(IAsyncResult res)
+		private void Push(object data)
 		{
-			try
+			string sdata = (string)data;
+			byte[] bytes = Encoding.ASCII.GetBytes (sdata);
+			lock (dataLock)
 			{
-				Socket handler = (Socket)res.AsyncState;
-
-				int bytesSent = handler.EndSend(res);
-				Debug.Log("Sent " + bytesSent + "B to client.");
-
-				handler.Shutdown(SocketShutdown.Receive);
-				handler.Close();
-			}
-			catch(Exception e)
-			{
-				Debug.LogException(e);
+				NetworkStream stream = client.GetStream ();
+				stream.Write (bytes, 0, bytes.Length);
 			}
 		}
 		#endregion

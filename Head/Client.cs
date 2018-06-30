@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Net;
-using System.Net.Sockets;
-using System.Threading;
-using System.Text;
 using Dullahan.Comm;
+using System.Net.Sockets;
+using System.Text;
 
 namespace Dullahan
 {
@@ -18,13 +17,12 @@ namespace Dullahan
 
 		#region INSTANCE_VARS
 
-		public int Port { get; set; }
+		private int port;
 
 		private IPAddress serverAddress;
 
-		private string response;
-
-		private ManualResetEvent connectDone, sendDone, recieveDone;
+		private TcpClient client;
+		private NetworkStream stream;
 		#endregion
 
 		#region STATIC_METHODS
@@ -36,120 +34,47 @@ namespace Dullahan
 		public Client(IPAddress serverAddress, int port = Server.DEFAULT_PORT)
 		{
 			this.serverAddress = serverAddress;
-			Port = port;
-
-			connectDone = new ManualResetEvent(false);
-			sendDone = new ManualResetEvent(false);
-			recieveDone = new ManualResetEvent(false);
+			this.port = port;
 		}
 
 		public void Start()
 		{
-			try
+			Console.WriteLine ("Attempting to connect to " + serverAddress.ToString ());
+
+			//establish connection
+			IPEndPoint ipep = new IPEndPoint (serverAddress, port);
+			client = new TcpClient (ipep);
+			stream = client.GetStream ();
+
+			Console.WriteLine ("Connection Established!\n Verifying...");
+
+			//send a basic handshake request to the Body
+			byte[] bytes = Encoding.ASCII.GetBytes ("ping");
+			stream.Write (bytes, 0, bytes.Length);
+
+			bytes = new byte[256];
+			int i;
+			string response = "";
+			while ((i = stream.Read (bytes, 0, bytes.Length)) != 0)
 			{
-				IPEndPoint remoteEP = new IPEndPoint(serverAddress, Port);
-
-				Socket client = new Socket(serverAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
-				client.BeginConnect(remoteEP, new AsyncCallback(ConnectCallback), client);
-				connectDone.WaitOne();
-
-				Send(client, "test string" + Server.EOF);
-				sendDone.WaitOne();
-
-				Receive(client);
-				recieveDone.WaitOne();
-
-				Console.WriteLine("Received " + response);
-				Console.ReadLine();
-				client.Close();
+				response = Encoding.ASCII.GetString (bytes, 0, i);
 			}
-			catch(Exception e)
+
+			if (response == "")
 			{
-				Console.Error.WriteLine(e);
+				Console.WriteLine ("Connection Failed. Aborting...");
+				return;
 			}
+
+			Console.WriteLine (response + "\nWelcome to Dullahan! Start hacking!");
+			Run ();
 		}
 
-		private void ConnectCallback(IAsyncResult res)
+		private void Run()
 		{
-			try
+			while (true)
 			{
-				Socket client = (Socket)res.AsyncState;
-				client.EndConnect(res);
-
-				Console.WriteLine("Connected to " + client.RemoteEndPoint.ToString());
-
-				connectDone.Set();
-			}
-			catch(Exception e)
-			{
-				Console.Error.WriteLine(e);
-			}
-		}
-
-		private void Receive(Socket client)
-		{
-			try
-			{
-				Packet pack = new Packet();
-				pack.workSock = client;
-
-				client.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReceiveCallback), pack);
-			}
-			catch(Exception e)
-			{
-				Console.Error.WriteLine(e);
-			}
-		}
-
-		private void ReceiveCallback(IAsyncResult res)
-		{
-			try
-			{
-				Packet pack = (Packet)res.AsyncState;
-				Socket client = pack.workSock;
-
-				int bytesRead = client.EndReceive(res);
-
-				if (bytesRead > 0)
-				{
-					pack.data += Encoding.ASCII.GetString(pack.buffer, 0, bytesRead);
-					client.BeginReceive(pack.buffer, 0, Packet.BUFFER_SIZE, 0, new AsyncCallback(ReceiveCallback), pack);
-				}
-				else
-				{
-					if (pack.data.Length > 1)
-						response = pack.data;
-
-					recieveDone.Set();
-				}
-			}
-			catch(Exception e)
-			{
-				Console.Error.WriteLine(e);
-			}
-		}
-
-		private void Send(Socket client, string data)
-		{
-			byte[] bytes = Encoding.ASCII.GetBytes(data);
-			client.BeginSend(bytes, 0, bytes.Length, 0, new AsyncCallback(SendCallback), client);
-		}
-
-		private void SendCallback(IAsyncResult res)
-		{
-			try
-			{
-				Socket client = (Socket)res.AsyncState;
-
-				int bytesSent = client.EndSend(res);
-				Console.WriteLine("Sent " + bytesSent + "B to server.");
-
-				sendDone.Set();
-			}
-			catch(Exception e)
-			{
-				Console.Error.WriteLine(e);
+				Console.WriteLine ("AAAAAAAAAAAAAAAAAAAAAAAA");
 			}
 		}
 		#endregion

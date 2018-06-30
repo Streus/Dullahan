@@ -31,7 +31,7 @@ namespace Dullahan.Logging
 		/// <summary>
 		/// Command result status code.
 		/// </summary>
-		public const int EXEC_SUCCESS = 0, EXEC_FAILURE = 1;
+		public const int EXEC_SUCCESS = 0, EXEC_SKIP = 1, EXEC_FAILURE = 2;
 
 		/// <summary>
 		/// Collection of all commands in the project.
@@ -161,10 +161,89 @@ namespace Dullahan.Logging
 			return CH_MUTE;
 		}
 
+		/// <summary>
+		/// Parse a raw string into an argument array
+		/// </summary>
+		/// <param name="raw">The raw input</param>
+		/// <returns></returns>
+		public static string[] ParseInput(string raw)
+		{
+			List<string> argsList = new List<string> ();
+			string mergeString = "";
+			bool merging = false;
+
+			for (int i = 0; i < raw.Length; i++)
+			{
+				if (raw[i] == '\"') //start or end space-ignoring group
+				{
+					merging = !merging;
+					if (!merging)
+					{
+						argsList.Add (mergeString);
+						mergeString = "";
+					}
+				}
+				else if (raw[i] == '%' || raw[i] == '!') //try to resolve a variable
+				{
+					char delim = raw[i] == '%' ? '%' : '!';
+					int start = i + 1;
+					int end = raw.IndexOf (delim, start);
+					if (end != -1)
+					{
+						mergeString += ""; //TODO resolve environment variable
+						i = end;
+					}
+				}
+				else if (raw[i] == ' ' && !merging) //end of a regular term
+				{
+					if (mergeString != "")
+						argsList.Add (mergeString);
+					mergeString = "";
+				}
+				else //add any other character to the mergeString
+					mergeString += raw[i];
+			}
+
+			//if the merge string is not empty, add it the the args list
+			if (mergeString != "")
+				argsList.Add (mergeString);
+
+			//return the parsed result
+			return argsList.ToArray ();
+		}
+
+		public static int InvokeCommand(string input)
+		{
+			return InvokeCommand (ParseInput (input));
+		}
+
 		public static int InvokeCommand(string[] args)
 		{
-			//TODO InvokeCommand
-			return EXEC_FAILURE;
+			int status = EXEC_FAILURE;
+
+			//skip execution of no command was provided
+			if (args.Length < 1)
+				return EXEC_SKIP;
+
+			Command c;
+			if (commands.TryGetValue (args[0].ToLower (), out c))
+			{
+				//found command, try executing
+				try
+				{
+					status = c.function.Invoke (args);
+				}
+				catch (Exception e)
+				{
+					Ch ("DEF").WriteLine ("Failed executing " + args[0] + "\n" + e.ToString ());
+				}
+			}
+			else
+			{
+				Ch ("DEF").WriteLine ("Could not find " + args[0] + ".");
+			}
+
+			return status;
 		}
         #endregion
 
@@ -175,7 +254,7 @@ namespace Dullahan.Logging
         #region INTERNAL_TYPES
 
 		/// <summary>
-		/// A data stream for information sent thtough the logging system.
+		/// A data stream for information sent through the logging system.
 		/// </summary>
 		public class Channel
 		{
@@ -192,7 +271,7 @@ namespace Dullahan.Logging
 				Server s = Server.GetInstance();
 				if(s.IsRunning())
 				{
-					s.Send(null, message);
+					s.Send(message);
 				}
 			}
 
@@ -202,7 +281,21 @@ namespace Dullahan.Logging
 			}
 		}
 
-		
-        #endregion
-    }
+		#endregion
+
+		#region DEFAULT_COMMANDS
+
+		/// <summary>
+		/// Basic verification test for connection between Head and Body
+		/// </summary>
+		/// <param name="args"></param>
+		/// <returns></returns>
+		[Command(Invocation = "ping", Help = "Verify connection to Unity instance.")]
+		private static int Handshake(string[] args)
+		{
+			Ch ("DEF").WriteLine ("Connection to '" + Application.productName + "' Established!");
+			return EXEC_SUCCESS;
+		}
+		#endregion
+	}
 }

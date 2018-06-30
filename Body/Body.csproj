@@ -51,8 +51,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>mkdir "D:\Prototype Projects\Dullahan\TestEnvironment\Assets\$(TargetName)"
-copy /Y "$(TargetDir)$(TargetName)*" "D:\Prototype Projects\Dullahan\TestEnvironment\Assets\$(TargetName)\"</PostBuildEvent>
+    <PostBuildEvent>mkdir "$(SolutionDir)..\TestEnvironment\Assets\$(TargetName)"
+copy /Y "$(TargetDir)$(TargetName)*" "$(SolutionDir)..\TestEnvironment\Assets\$(TargetName)\"</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
