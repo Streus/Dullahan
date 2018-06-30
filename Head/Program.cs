@@ -7,7 +7,7 @@ namespace Dullahan
 	{
 		public static void Main(string[] args)
 		{
-			Client c = new Client(IPAddress.Parse("127.0.0.1"));
+			Client c = new Client(IPAddress.Parse("127.0.0.1"), 7777);
 			Console.ReadLine();
 			c.Start();
 		}

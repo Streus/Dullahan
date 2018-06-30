@@ -45,7 +45,6 @@
     <Compile Include="Logging\Command.cs" />
     <Compile Include="Logging\CommandAttribute.cs" />
     <Compile Include="Logging\Log.cs" />
-    <Compile Include="Comm\Packet.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Comm\Server.cs" />
   </ItemGroup>

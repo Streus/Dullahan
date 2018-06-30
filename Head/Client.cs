@@ -43,7 +43,7 @@ namespace Dullahan
 
 			//establish connection
 			IPEndPoint ipep = new IPEndPoint (serverAddress, port);
-			client = new TcpClient (ipep);
+			client = new TcpClient ("localhost", port);
 			stream = client.GetStream ();
 
 			Console.WriteLine ("Connection Established!\n Verifying...");

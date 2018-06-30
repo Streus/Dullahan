@@ -89,6 +89,7 @@ namespace Dullahan.Comm
 			server = null;
 			client = null;
 
+			Debug.Log ("Starting Dullahan Server...");
 			Run();
 		}
 
@@ -96,7 +97,14 @@ namespace Dullahan.Comm
 		{
 			// Clean up connections
 			lock (dataLock)
+			{
 				running = false;
+				if(client != null)
+					client.Close ();
+				client = null;
+				server.Stop ();
+				server = null;
+			}
 		}
 
 		/// <summary>
@@ -120,6 +128,7 @@ namespace Dullahan.Comm
 				{
 					if (unreadData)
 					{
+						Debug.Log ("Invoking " + clientData); //DEBUG
 						int success = Log.InvokeCommand (clientData);
 					}
 				}
@@ -142,7 +151,7 @@ namespace Dullahan.Comm
 
 		private void Listen()
 		{
-			byte[] bytes = new byte[Packet.BUFFER_SIZE];
+			byte[] bytes = new byte[1024];
 			lock (dataLock)
 			{
 				clientData = "";
@@ -154,7 +163,6 @@ namespace Dullahan.Comm
 			lock (dataLock)
 			{
 				client = server.AcceptTcpClient ();
-				Debug.Log ("[DUL] Connection from client.");
 				stream = client.GetStream ();
 			}
 
@@ -185,6 +193,7 @@ namespace Dullahan.Comm
 		/// <param name="data"></param>
 		public void Send(string data)
 		{
+			Debug.Log ("Sending " + data + " to client."); //DEBUG
 			if (client != null)
 			{
 				Thread pushThread = new Thread (Push);
