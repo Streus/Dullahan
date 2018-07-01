@@ -3,6 +3,7 @@ using System.Net;
 using Dullahan.Comm;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace Dullahan
 {
@@ -13,6 +14,7 @@ namespace Dullahan
 	{
 		#region STATIC_VARS
 
+		private const string TAG = "[Client]";
 		#endregion
 
 		#region INSTANCE_VARS
@@ -43,39 +45,63 @@ namespace Dullahan
 
 			//establish connection
 			IPEndPoint ipep = new IPEndPoint (serverAddress, port);
-			client = new TcpClient ("localhost", port);
+			client = new TcpClient ("localhost", port); //TODO paramatize host address
 			stream = client.GetStream ();
 
-			Console.WriteLine ("Connection Established!\n Verifying...");
+			Console.WriteLine ("Connection Established!\nVerifying...");
 
 			//send a basic handshake request to the Body
-			byte[] bytes = Encoding.ASCII.GetBytes ("ping");
-			stream.Write (bytes, 0, bytes.Length);
+			byte[] sendBytes = Encoding.ASCII.GetBytes ("ping");
+			stream.BeginWrite (sendBytes, 0, sendBytes.Length, SendFinished, stream);
 
-			bytes = new byte[256];
-			int i;
-			string response = "";
-			while ((i = stream.Read (bytes, 0, bytes.Length)) != 0)
-			{
-				response = Encoding.ASCII.GetString (bytes, 0, i);
-			}
+			byte[] readBytes = new byte[1024];
+			stream.BeginRead (readBytes, 0, readBytes.Length, ReadFinished, stream);
 
-			if (response == "")
-			{
-				Console.WriteLine ("Connection Failed. Aborting...");
-				return;
-			}
-
-			Console.WriteLine (response + "\nWelcome to Dullahan! Start hacking!");
-			Run ();
-		}
-
-		private void Run()
-		{
 			while (true)
 			{
-				Console.WriteLine ("AAAAAAAAAAAAAAAAAAAAAAAA");
+
 			}
+		}
+
+		/// <summary>
+		/// Read from the server has finished
+		/// </summary>
+		/// <param name="res"></param>
+		private void ReadFinished(IAsyncResult res)
+		{
+			NetworkStream stream = (NetworkStream)res.AsyncState;
+
+			byte[] byteV = new byte[1024];
+			string message = "";
+
+			int byteC = stream.EndRead (res);
+			
+#if DEBUG
+			Console.ForegroundColor = ConsoleColor.DarkGray;
+			Console.WriteLine ("\n" + TAG + " Read " + byteC + "B");
+			Console.ResetColor ();
+#endif
+
+			message += Encoding.ASCII.GetString (byteV, 0, byteC);
+
+			while (stream.DataAvailable)
+			{
+				stream.BeginRead (byteV, 0, byteV.Length, ReadFinished, stream);
+			}
+
+			Console.WriteLine (message);
+		}
+
+		private void SendFinished(IAsyncResult res)
+		{
+			NetworkStream stream = (NetworkStream)res.AsyncState;
+			stream.EndWrite (res);
+
+#if DEBUG
+			Console.ForegroundColor = ConsoleColor.DarkGray;
+			Console.WriteLine (TAG + " Finished sending");
+			Console.ResetColor ();
+#endif
 		}
 		#endregion
 

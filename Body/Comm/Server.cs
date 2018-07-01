@@ -25,7 +25,9 @@ namespace Dullahan.Comm
 		public const int DEFAULT_PORT = 8080;
 
 		// Marks the end of packets
-		public const string EOF = "<EOF>";
+		public const string EOF = "\0";
+
+		private const string TAG = "[DUL]";
 
 		private static Server instance;
 		#endregion
@@ -35,7 +37,7 @@ namespace Dullahan.Comm
 		/// <summary>
 		/// Indicates the state of the listening thread
 		/// </summary>
-		private volatile bool running;
+		private bool running;
 
 		/// <summary>
 		/// Data recieved from the client
@@ -45,12 +47,7 @@ namespace Dullahan.Comm
 		/// <summary>
 		/// Indicates if there is data to be read from clientData
 		/// </summary>
-		private volatile bool unreadData;
-
-		/// <summary>
-		/// Used to lock clientData for the main Unity thread
-		/// </summary>
-		private object dataLock = new object ();
+		private bool unreadData;
 
 		[SerializeField]
 		private int port = DEFAULT_PORT;
@@ -82,29 +79,24 @@ namespace Dullahan.Comm
 				instance = this;
 			else
 			{
-				Debug.LogError ("More than one Dullahan Server active! Destroying...");
+				Debug.LogError (TAG + " More than one Dullahan Server active! Destroying...");
 				Destroy (gameObject);
 			}
 
 			server = null;
 			client = null;
 
-			Debug.Log ("Starting Dullahan Server...");
+			Debug.Log (TAG + " Initializing Log...");
+			Log.Init ();
+			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
 		}
 
 		public void OnDestroy()
 		{
-			// Clean up connections
-			lock (dataLock)
-			{
-				running = false;
-				if(client != null)
-					client.Close ();
-				client = null;
-				server.Stop ();
-				server = null;
-			}
+			running = false;
+			server.Stop ();
+			server = null;
 		}
 
 		/// <summary>
@@ -113,26 +105,7 @@ namespace Dullahan.Comm
 		/// <returns></returns>
 		public bool IsRunning()
 		{
-			lock (dataLock)
-			{
-				return running;
-			}
-		}
-
-		public void Update()
-		{
-			//check on the listening thread
-			if (IsRunning ())
-			{
-				lock (dataLock)
-				{
-					if (unreadData)
-					{
-						Debug.Log ("Invoking " + clientData); //DEBUG
-						int success = Log.InvokeCommand (clientData);
-					}
-				}
-			}
+			return running;
 		}
 
 		/// <summary>
@@ -146,45 +119,82 @@ namespace Dullahan.Comm
 			server.Start ();
 			running = true;
 
-			Thread listeningThread = new Thread (Listen);
+			server.BeginAcceptTcpClient (ClientAcceptCallback, server);
+			StartCoroutine(WaitForAccept ());
 		}
 
-		private void Listen()
+		private void ClientAcceptCallback(IAsyncResult res)
+		{
+			TcpListener listener = (TcpListener)res.AsyncState;
+			client = listener.EndAcceptTcpClient (res);
+		}
+
+		private IEnumerator WaitForAccept()
+		{
+			while (client == null)
+			{
+				Debug.Log (TAG + " Waiting..."); //DEBUG
+				yield return new WaitForEndOfFrame();
+			}
+			Debug.Log (TAG + " Starting Listen.");
+			StartCoroutine (Listen ());
+		}
+
+		private IEnumerator Listen()
 		{
 			byte[] bytes = new byte[1024];
-			lock (dataLock)
-			{
-				clientData = "";
-				unreadData = false;
-			}
+			clientData = "";
+			unreadData = false;
 
 			//wait for client connection
 			NetworkStream stream;
-			lock (dataLock)
-			{
-				client = server.AcceptTcpClient ();
-				stream = client.GetStream ();
-			}
+			stream = client.GetStream ();
+
+			Debug.Log (TAG + " Starting Read."); //DEBUG
 
 			//read incoming traffic from client
 			while (IsRunning())
 			{
-				int i;
-				while ((i = stream.Read (bytes, 0, bytes.Length)) != 0)
+				Debug.Log (TAG + " Listening for data..."); //DEBUG
+				yield return null;
+
+				if (!unreadData)
+					stream.BeginRead (bytes, 0, bytes.Length, ReadFinished, stream);
+				else
 				{
-					lock (dataLock)
-						clientData = Encoding.ASCII.GetString (bytes, 0, i);
+					Debug.Log (TAG + " Invoking " + clientData); //DEBUG
+					int success = Log.InvokeCommand (clientData);
+					unreadData = false;
 				}
-				lock (dataLock)
-					unreadData = true;
 			}
 
 			//close connection
-			lock (dataLock)
+			stream.Close ();
+			client.Close ();
+			client = null;
+
+			Debug.Log (TAG + " Closed connection.");
+		}
+
+		private void ReadFinished(IAsyncResult res)
+		{
+			NetworkStream stream = (NetworkStream)res.AsyncState;
+
+			byte[] byteV = new byte[1024];
+			string clientData = "";
+
+			int byteC = stream.EndRead (res);
+
+			Debug.Log (TAG + " Read " + byteC + "B."); //DEBUG
+
+			clientData += Encoding.ASCII.GetString (byteV, 0, byteC);
+
+			while (stream.DataAvailable)
 			{
-				client.Close ();
-				client = null;
+				stream.BeginRead (byteV, 0, byteV.Length, ReadFinished, stream);
 			}
+
+			unreadData = true;
 		}
 
 		/// <summary>
@@ -193,28 +203,73 @@ namespace Dullahan.Comm
 		/// <param name="data"></param>
 		public void Send(string data)
 		{
-			Debug.Log ("Sending " + data + " to client."); //DEBUG
-			if (client != null)
-			{
-				Thread pushThread = new Thread (Push);
-			}
+			Debug.Log (TAG + " Sending " + data + " to client."); //DEBUG
+			byte[] bytes = Encoding.ASCII.GetBytes (data);
+			client.GetStream ().BeginWrite (bytes, 0, bytes.Length, SendFinished, client);
 		}
-
-		private void Push(object data)
+		private void SendFinished(IAsyncResult res)
 		{
-			string sdata = (string)data;
-			byte[] bytes = Encoding.ASCII.GetBytes (sdata);
-			lock (dataLock)
-			{
-				NetworkStream stream = client.GetStream ();
-				stream.Write (bytes, 0, bytes.Length);
-			}
+			client.GetStream ().EndWrite (res);
 		}
 		#endregion
 
 		#region INTERNAL_TYPES
 
-		
+		#endregion
+
+		#region DEFAULT_COMMANDS
+
+		/// <summary>
+		/// Basic verification test for connection between Head and Body
+		/// </summary>
+		/// <param name="args"></param>
+		/// <returns></returns>
+		[Command (Invocation = "ping", Help = "Verify connection to Unity instance.")]
+		private static int Handshake(string[] args)
+		{
+			if (instance == null)
+				return Log.EXEC_FAILURE;
+
+			instance.Send ("Connection to '" + Application.productName + "' Established!");
+			return Log.EXEC_SUCCESS;
+		}
+
+		/// <summary>
+		/// Diconnect the remote client from the server.
+		/// </summary>
+		/// <param name="args"></param>
+		/// <returns></returns>
+		[Command(Invocation = "logout", Help = "Disconnect the remote client from the server.")]
+		private static int Disconnect(string[] args)
+		{
+			if (instance != null)
+			{
+				try
+				{
+					instance.client.GetStream ().Close ();
+					instance.client.Close ();
+					instance.client = null;
+
+					instance.server.Stop ();
+					instance.server = null;
+				}
+				catch (Exception e)
+				{
+					//something went wrong
+					Debug.LogException (e);
+					return Log.EXEC_FAILURE;
+				}
+
+				//successfully disconnected
+				return Log.EXEC_SUCCESS;
+			}
+
+			//nothing to disconnect from, strangely enough
+			//wait, how did the server get this?
+			//i'm gonna stop asking questions
+			return Log.EXEC_SKIP;
+
+		}
 		#endregion
 	}
 }

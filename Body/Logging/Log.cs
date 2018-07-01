@@ -48,6 +48,11 @@ namespace Dullahan.Logging
 		/// </summary>
 		private static Channel[] channels;
 
+		/// <summary>
+		/// Has the logging system been initialized?
+		/// </summary>
+		private static bool initalized = false;
+
         #endregion
 
         #region INSTANCE_VARS
@@ -56,8 +61,17 @@ namespace Dullahan.Logging
 
         #region STATIC_METHODS
 
-		static Log()
+		public static void Init()
 		{
+			if (initalized)
+				return;
+
+			//redirect Console.Write to Unity's logger
+//			Console.SetOut (new Utility.ConsoleRedirector ());
+
+			//instantiate commands collection
+			commands = new Dictionary<string, Command> ();
+
 			//assemble all methods marked as commands into a local collection
 			foreach(Assembly a in AppDomain.CurrentDomain.GetAssemblies())
 			{
@@ -87,11 +101,26 @@ namespace Dullahan.Logging
 							continue;
 						}
 
-						//add valid command to collection
+						//create wrapper for command
 						Command com = new Command();
 						com.invocation = cAttrs[0].Invocation.ToLower();
 						com.function = c;
 						com.helpText = cAttrs[0].Help;
+
+						//default Dullahan commands get precidence
+						if (commands.ContainsKey (com.invocation))
+						{
+							//overwrite user command with Dullahan command
+							if (t == typeof (Log) || t == typeof(Server))
+								commands.Remove (com.invocation);
+							//notify that command was not added
+							else
+								Debug.LogError ("A command with the invokation " +
+									com.invocation + " already exists.\nAssembly: " +
+									a.FullName + "\nType: " + t.FullName + "\nMethod: " + m.Name);
+						}
+
+						//add valid command to collection
 						commands.Add(cAttrs[0].Invocation, com);
 					}
 				}
@@ -102,6 +131,9 @@ namespace Dullahan.Logging
 			channelFilter = CH_DEFAULT;
 			channels[0] = new Channel("MUT");
 			channels[1] = new Channel("DEF");
+
+			//toggle initialization flag
+			initalized = true;
 		}
 
 		/// <summary>
@@ -285,17 +317,7 @@ namespace Dullahan.Logging
 
 		#region DEFAULT_COMMANDS
 
-		/// <summary>
-		/// Basic verification test for connection between Head and Body
-		/// </summary>
-		/// <param name="args"></param>
-		/// <returns></returns>
-		[Command(Invocation = "ping", Help = "Verify connection to Unity instance.")]
-		private static int Handshake(string[] args)
-		{
-			Ch ("DEF").WriteLine ("Connection to '" + Application.productName + "' Established!");
-			return EXEC_SUCCESS;
-		}
+
 		#endregion
 	}
 }
