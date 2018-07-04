@@ -21,6 +21,8 @@ namespace Dullahan
 
 		#region INSTANCE_VARS
 
+		public bool Connnected { get; private set; }
+
 		private int port;
 
 		private IPAddress serverAddress;
@@ -43,31 +45,24 @@ namespace Dullahan
 			this.serverAddress = serverAddress;
 			this.port = port;
 
+			Connnected = false;
+
 			serverData = "";
 			serverDataBuffer = new byte[SDB_LENGTH];
 		}
 
 		public void Start()
 		{
-			Console.WriteLine ("Attempting to connect to " + serverAddress.ToString ());
-
 			//establish connection
 			IPEndPoint ipep = new IPEndPoint (serverAddress, port);
 			client = new TcpClient ("localhost", port); //TODO paramatize host address
 			stream = client.GetStream ();
-
-			Console.WriteLine ("Connection Established!\nVerifying...");
 
 			//send a basic handshake request to the Body
 			byte[] sendBytes = Encoding.ASCII.GetBytes ("ping");
 			stream.BeginWrite (sendBytes, 0, sendBytes.Length, SendFinished, stream);
 
 			stream.BeginRead (serverDataBuffer, 0, serverDataBuffer.Length, ReadFinished, stream);
-
-			while (true)
-			{
-
-			}
 		}
 
 		/// <summary>
@@ -76,6 +71,7 @@ namespace Dullahan
 		/// <param name="res"></param>
 		private void ReadFinished(IAsyncResult res)
 		{
+			Connnected = true;
 			NetworkStream stream = (NetworkStream)res.AsyncState;
 
 			int byteC = stream.EndRead (res);

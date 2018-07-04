@@ -88,7 +88,7 @@ namespace Dullahan.Logging
 						if (commands.ContainsKey (com.invocation))
 						{
 							//overwrite user command with Dullahan command
-							if (t == typeof (Log) || t == typeof (Server))
+							if (t.Assembly == typeof(Log).Assembly)
 								commands.Remove (com.invocation);
 							//notify that command was not added
 							else
