@@ -41,18 +41,20 @@ namespace Dullahan.Logging
 			if (initalized)
 				return;
 
+			Debug.Log ("[DUL] Initializing Log...");
+
 			//redirect Console.Write to Unity's logger
-//			Console.SetOut (new Utility.ConsoleRedirector ());
+			//Console.SetOut (new Utility.ConsoleRedirector ());
 
 			//instantiate commands collection
 			commands = new Dictionary<string, Command> ();
-
+			
 			//assemble all methods marked as commands into a local collection
-			foreach(Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+			foreach(Assembly a in AppDomain.CurrentDomain.GetAssemblies ())
 			{
 				foreach(Type t in a.GetTypes())
 				{
-					foreach(MethodInfo m in t.GetMethods(BindingFlags.Static))
+					foreach (MethodInfo m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
 					{
 						CommandAttribute[] cAttrs = (CommandAttribute[])m.GetCustomAttributes(typeof(CommandAttribute), false);
 
@@ -86,17 +88,21 @@ namespace Dullahan.Logging
 						if (commands.ContainsKey (com.invocation))
 						{
 							//overwrite user command with Dullahan command
-							if (t == typeof (Log) || t == typeof(Server))
+							if (t == typeof (Log) || t == typeof (Server))
 								commands.Remove (com.invocation);
 							//notify that command was not added
 							else
+							{
 								Debug.LogError ("A command with the invokation " +
 									com.invocation + " already exists.\nAssembly: " +
 									a.FullName + "\nType: " + t.FullName + "\nMethod: " + m.Name);
+								continue;
+							}
 						}
 
 						//add valid command to collection
 						commands.Add(cAttrs[0].Invocation, com);
+						Debug.Log ("Added \"" + com.invocation + "\" to command list."); //DEBUG
 					}
 				}
 			}

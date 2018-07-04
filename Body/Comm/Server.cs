@@ -88,7 +88,6 @@ namespace Dullahan.Comm
 			server = null;
 			client = null;
 
-			Debug.Log (TAG + " Initializing Log...");
 			Log.Init ();
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
