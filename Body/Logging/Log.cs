@@ -9,24 +9,9 @@ namespace Dullahan.Logging
     /// <summary>
     /// Entrypoint for sending logging information to clients.
     /// </summary>
-    public class Log
+    public static class Log
     {
 		#region STATIC_VARS
-
-		/// <summary>
-		/// Unprinted channel. Nothing that goes here is displayed.
-		/// </summary>
-		public const int CH_MUTE = 0x0;
-
-		/// <summary>
-		/// Default output channel. Command results direct here by default.
-		/// </summary>
-		public const int CH_DEFAULT = 0x1;
-
-		/// <summary>
-		/// All channels.
-		/// </summary>
-		public const int CH_BROADCAST = ~0x0;
 
 		/// <summary>
 		/// Command result status code.
@@ -37,16 +22,6 @@ namespace Dullahan.Logging
 		/// Collection of all commands in the project.
 		/// </summary>
 		private static Dictionary<string, Command> commands;
-
-		/// <summary>
-		/// Bit-vector of channel ids whose data will be sent to clients
-		/// </summary>
-		private static int channelFilter;
-
-		/// <summary>
-		/// User defined names for channel ids
-		/// </summary>
-		private static Channel[] channels;
 
 		/// <summary>
 		/// Has the logging system been initialized?
@@ -126,71 +101,8 @@ namespace Dullahan.Logging
 				}
 			}
 
-			//set up channels
-			channels = new Channel[32];
-			channelFilter = CH_DEFAULT;
-			channels[0] = new Channel("MUT");
-			channels[1] = new Channel("DEF");
-
 			//toggle initialization flag
 			initalized = true;
-		}
-
-		/// <summary>
-		/// Get a channel by its name
-		/// </summary>
-		/// <param name="name">The name of the channel</param>
-		/// <returns></returns>
-		public static Channel Ch(string name)
-		{
-			if (name == "")
-				throw new InvalidOperationException("Cannot resolve empty string to channel.");
-
-			for (int i = 0; i < channels.Length; i++)
-			{
-				if (channels[i].Name == name)
-					return channels[i];
-			}
-
-			//send to MUT channel
-			return channels[0];
-		}
-
-		/// <summary>
-		/// Give a channel ID a string name. Overwrites any existing name.
-		/// </summary>
-		/// <param name="channel">The channel ID (2-31)</param>
-		/// <param name="name">The name to give the channel</param>
-		public static void SetChannelName(int channel, string name)
-		{
-			if(channel < 2)
-				throw new InvalidOperationException("Channels 0 and 1 are reserved.");
-
-			try { channels[channel].Name = name; }
-			catch(IndexOutOfRangeException)
-			{
-				Debug.LogError("Invalid channel ID: " + channel);
-			}
-		}
-
-		/// <summary>
-		/// Convert a channel name into a bit-vector. If the channel does not exist,
-		/// then CH_MUTE is returned.
-		/// </summary>
-		/// <param name="name">The name of the channel to find</param>
-		/// <returns></returns>
-		public static int NameToChannel(string name)
-		{
-			if (name == "")
-				throw new InvalidOperationException("Cannot resolve empty string to channel.");
-
-			for(int i = 0; i < channels.Length; i++)
-			{
-				if (channels[i].Name == name)
-					return 1 << i;
-			}
-
-			return CH_MUTE;
 		}
 
 		/// <summary>
@@ -258,24 +170,37 @@ namespace Dullahan.Logging
 				return EXEC_SKIP;
 
 			Command c;
-			if (commands.TryGetValue (args[0].ToLower (), out c))
+			string invocation = args[0].ToLower ();
+			Debug.Log ("Log received invoke request: " + invocation); //DEBUG
+			if (commands.TryGetValue (invocation, out c))
 			{
 				//found command, try executing
 				try
 				{
+					Debug.Log ("Executing " + invocation); //DEBUG
 					status = c.function.Invoke (args);
 				}
 				catch (Exception e)
 				{
-					Ch ("DEF").WriteLine ("Failed executing " + args[0] + "\n" + e.ToString ());
+					Println ("Failed executing " + args[0] + "\n" + e.ToString ());
 				}
 			}
 			else
 			{
-				Ch ("DEF").WriteLine ("Could not find " + args[0] + ".");
+				Println ("Could not find " + args[0] + ".");
 			}
 
 			return status;
+		}
+
+		public static void Print(string msg)
+		{
+			Server.GetInstance ().Send (msg);
+		}
+
+		public static void Println(string msg)
+		{
+			Print (msg + "\n");
 		}
         #endregion
 
@@ -284,34 +209,6 @@ namespace Dullahan.Logging
         #endregion
 
         #region INTERNAL_TYPES
-
-		/// <summary>
-		/// A data stream for information sent through the logging system.
-		/// </summary>
-		public class Channel
-		{
-			public string Name { get; set; }
-
-			public Channel(string name)
-			{
-				Name = name;
-			}
-
-			//TODO Channel.Write
-			public void Write(string message)
-			{
-				Server s = Server.GetInstance();
-				if(s.IsRunning())
-				{
-					s.Send(message);
-				}
-			}
-
-			public void WriteLine(string message)
-			{
-				Write(message + "\n");
-			}
-		}
 
 		#endregion
 

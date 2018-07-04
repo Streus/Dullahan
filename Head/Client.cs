@@ -1,9 +1,8 @@
-﻿using System;
+﻿using Dullahan.Comm;
+using System;
 using System.Net;
-using Dullahan.Comm;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 namespace Dullahan
 {
@@ -14,7 +13,10 @@ namespace Dullahan
 	{
 		#region STATIC_VARS
 
-		private const string TAG = "[Client]";
+		private const string L_TAG = "[Local]";
+		private const string R_TAG = "[Remote]";
+
+		private const int SDB_LENGTH = 1024;
 		#endregion
 
 		#region INSTANCE_VARS
@@ -25,6 +27,9 @@ namespace Dullahan
 
 		private TcpClient client;
 		private NetworkStream stream;
+
+		private string serverData;
+		private byte[] serverDataBuffer;
 		#endregion
 
 		#region STATIC_METHODS
@@ -33,10 +38,13 @@ namespace Dullahan
 
 		#region INSTANCE_METHODS
 
-		public Client(IPAddress serverAddress, int port = Server.DEFAULT_PORT)
+		public Client(IPAddress serverAddress, int port = Protocol.DEFAULT_PORT)
 		{
 			this.serverAddress = serverAddress;
 			this.port = port;
+
+			serverData = "";
+			serverDataBuffer = new byte[SDB_LENGTH];
 		}
 
 		public void Start()
@@ -54,8 +62,7 @@ namespace Dullahan
 			byte[] sendBytes = Encoding.ASCII.GetBytes ("ping");
 			stream.BeginWrite (sendBytes, 0, sendBytes.Length, SendFinished, stream);
 
-			byte[] readBytes = new byte[1024];
-			stream.BeginRead (readBytes, 0, readBytes.Length, ReadFinished, stream);
+			stream.BeginRead (serverDataBuffer, 0, serverDataBuffer.Length, ReadFinished, stream);
 
 			while (true)
 			{
@@ -71,25 +78,22 @@ namespace Dullahan
 		{
 			NetworkStream stream = (NetworkStream)res.AsyncState;
 
-			byte[] byteV = new byte[1024];
-			string message = "";
-
 			int byteC = stream.EndRead (res);
 			
 #if DEBUG
 			Console.ForegroundColor = ConsoleColor.DarkGray;
-			Console.WriteLine ("\n" + TAG + " Read " + byteC + "B");
+			Console.WriteLine ("\n" + L_TAG + " Read " + byteC + "B");
 			Console.ResetColor ();
 #endif
 
-			message += Encoding.ASCII.GetString (byteV, 0, byteC);
+			serverData += Encoding.ASCII.GetString (serverDataBuffer, 0, byteC);
 
 			while (stream.DataAvailable)
 			{
-				stream.BeginRead (byteV, 0, byteV.Length, ReadFinished, stream);
+				stream.BeginRead (serverDataBuffer, 0, serverDataBuffer.Length, ReadFinished, stream);
 			}
 
-			Console.WriteLine (message);
+			Console.WriteLine (serverData);
 		}
 
 		private void SendFinished(IAsyncResult res)
@@ -99,7 +103,7 @@ namespace Dullahan
 
 #if DEBUG
 			Console.ForegroundColor = ConsoleColor.DarkGray;
-			Console.WriteLine (TAG + " Finished sending");
+			Console.WriteLine (L_TAG + " Finished sending");
 			Console.ResetColor ();
 #endif
 		}

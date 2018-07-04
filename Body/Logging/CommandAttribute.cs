@@ -7,6 +7,7 @@ namespace Dullahan.Logging
 	{
 		public string Invocation { get; set; }
 		public string Help { get; set; }
+		public string HelpFile { get; set; }
 	}
 
 	/// <summary>
