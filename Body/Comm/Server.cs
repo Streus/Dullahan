@@ -174,6 +174,8 @@ namespace Dullahan.Net
 						case Packet.DataType.command:
 							//run command and pass back success code
 							Packet responsePacket = new Packet(Packet.DataType.response);
+							if (sp.packet.data == "ping")
+								sp.packet.data += " " + sp.client.Name;
 							responsePacket.logResult = Environment.InvokeCommand(sp.packet.data);
 							sp.client.Send(responsePacket);
 							break;
@@ -251,10 +253,10 @@ namespace Dullahan.Net
 		[Command (Invocation = "ping", HelpFile = "res:ping")]
 		private static int Handshake(string[] args)
 		{
-			if (instance == null)
+			if (args.Length < 2)
 				return Environment.EXEC_FAILURE;
 
-			instance.Send (Packet.DataType.response, "Connection to '" + Application.productName + "' Established!");
+			instance.Send (Packet.DataType.response, args[1]);
 			return Environment.EXEC_SUCCESS;
 		}
 

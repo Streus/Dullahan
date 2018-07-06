@@ -25,6 +25,7 @@ namespace Dullahan.Net
 
 		public string Name { get; set; }
 
+		private readonly object stateLock = new object();
 		public bool Connected { get; private set; }
 		public bool Reading { get; private set; }
 		public bool Sending { get; private set; }
@@ -36,7 +37,8 @@ namespace Dullahan.Net
 		{
 			get
 			{
-				return Connected && !Reading && !Sending;
+				lock(stateLock)
+					return Connected && !Reading && !Sending;
 			}
 		}
 
@@ -130,6 +132,7 @@ namespace Dullahan.Net
 				//begin reading operation
 				byte[] dataBuffer = new byte[DB_LENGTH];
 				stream.BeginRead(dataBuffer, 0, dataBuffer.Length, ReadFinished, dataBuffer);
+
 				Reading = true;
 			}
 		}
@@ -220,6 +223,22 @@ namespace Dullahan.Net
 			Console.WriteLine (DEBUG_TAG + " Finished sending");
 #endif
 			Sending = false;
+		}
+
+		/// <summary>
+		/// Perform a Send and block for the response
+		/// </summary>
+		/// <param name="outbound"></param>
+		/// <returns></returns>
+		public bool SendAndRead(Packet outbound, DataReceivedCallback onResult)
+		{
+			//TODO this ain't done
+			dataRead += onResult;
+			Send(outbound);
+			while (Sending) { }
+			Read();
+			while (Reading) { }
+			return true;
 		}
 
 		public void Disconnect()

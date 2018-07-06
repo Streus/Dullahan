@@ -224,19 +224,6 @@ namespace Dullahan
 
 		#region DEFAULT_COMMANDS
 
-		[Command(Invocation = "regcid", Help = "Receive the name given to this client by the server")]
-		private static int RegisterClientID(string[] args)
-		{
-			if (args.Length < 2)
-				return Environment.EXEC_FAILURE;
-
-			string name = args[1];
-			client.Name = name;
-#if DEBUG
-			Console.WriteLine("Received name from server: \"" + client.Name + "\"");
-#endif
-			return Environment.EXEC_SUCCESS;
-		}
 		#endregion
 	}
 }
