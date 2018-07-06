@@ -9,7 +9,7 @@ namespace Dullahan.Net
 	{
 		public DataType type;
 		public string data;
-		public int logResult;
+		public int logResult = -1;
 
 		public Packet(DataType type) : this(type, null) { }
 		public Packet(DataType type, string data)

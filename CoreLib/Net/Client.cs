@@ -23,6 +23,8 @@ namespace Dullahan.Net
 
 		#region INSTANCE_VARS
 
+		public string Name { get; set; }
+
 		public bool Connected { get; private set; }
 		public bool Reading { get; private set; }
 		public bool Sending { get; private set; }
@@ -225,6 +227,16 @@ namespace Dullahan.Net
 			stream.Close();
 			client.Close();
 			Sending = Reading = Connected = false;
+		}
+
+		public override int GetHashCode()
+		{
+			return Name.GetHashCode();
+		}
+
+		public override bool Equals(object obj)
+		{
+			return Name.Equals(((Client)obj).Name);
 		}
 		#endregion
 

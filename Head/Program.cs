@@ -22,6 +22,18 @@ namespace Dullahan
 		private const string executionModeFlagLong = "--mode";
 		#endregion
 
+		#region MISC_CONSTANTS
+
+		private const string DEBUG_TAG = "[PROG]";
+
+		private static volatile bool blocking = false;
+		#endregion
+
+		#region STATIC_VARS
+
+		private static Client client;
+		#endregion
+
 		public static void Main(string[] args)
 		{
 			//default values
@@ -97,10 +109,10 @@ namespace Dullahan
 			Environment.Init();
 
 			//start tcp client
-			Client c = null;
+			client = null;
 			try
 			{
-				c = new Client (IPAddress.Parse (ip), port);
+				client = new Client (IPAddress.Parse (ip), port);
 			}
 			catch (FormatException)
 			{
@@ -110,33 +122,65 @@ namespace Dullahan
 				System.Environment.Exit (1);
 			}
 
-			c.dataRead += ReceiveResponse;
-			c.Start ();
+			if (mode == ExecutionMode.command)
+				client.dataRead += CommandReceiveResponse;
+			else if (mode == ExecutionMode.listen)
+				client.dataRead += ListenerReceiveResponse;
+			client.Start ();
 
 			//block for client to connect
-			while (!c.Connected) { }
+			while (!client.Connected) { }
 			Console.WriteLine ("\nConnected!");
 
 			//verify connection
-			c.Send(new Packet(Packet.DataType.command, "ping"));
+			client.Send(new Packet(Packet.DataType.command, "ping"));
 
 			//block for response
 			while (true)
 			{
-				if (c.Idle)
-					c.Read();
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Telling server to mute connection");
+#endif
+				client.Send(new Packet(Packet.DataType.command, "mute add " + client.Name));
+
+				string command = Console.ReadLine();
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Telling server to unmute connection");
+#endif
+				client.Send(new Packet(Packet.DataType.command, "mute rem " + client.Name));
+
+				if (client.Idle)
+					client.Read();
+
+				//block until the command finishes
+				blocking = true;
+				while (true)
+				{
+					lock(client)
+					{
+						if (!blocking)
+							break;
+					}
+				}
 			}
 		}
 
-		private static void ReceiveResponse(Client endpoint, Packet packet)
+		private static void CommandReceiveResponse(Client endpoint, Packet packet)
 		{
-			if(packet.logResult != 0)
+			if(packet.logResult != -1)
 			{
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.WriteLine("Encountered error!");
+				lock(client)
+				{
+					blocking = false;
+				}
 			}
+
 			Console.WriteLine(packet.data);
-			Console.ResetColor();
+		}
+
+		private static void ListenerReceiveResponse(Client endpoint, Packet packet)
+		{
+			Console.WriteLine(packet.data);
 		}
 
 		/// <summary>
@@ -176,6 +220,23 @@ namespace Dullahan
 		#region INTERNAL_TYPES
 
 		private enum ExecutionMode { listen, command }
+		#endregion
+
+		#region DEFAULT_COMMANDS
+
+		[Command(Invocation = "regcid", Help = "Receive the name given to this client by the server")]
+		private static int RegisterClientID(string[] args)
+		{
+			if (args.Length < 2)
+				return Environment.EXEC_FAILURE;
+
+			string name = args[1];
+			client.Name = name;
+#if DEBUG
+			Console.WriteLine("Received name from server: \"" + client.Name + "\"");
+#endif
+			return Environment.EXEC_SUCCESS;
+		}
 		#endregion
 	}
 }

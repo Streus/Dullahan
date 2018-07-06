@@ -42,6 +42,11 @@ namespace Dullahan.Net
 		private List<Client> clients;
 
 		/// <summary>
+		/// Clients in this set are not accepting sent data
+		/// </summary>
+		private HashSet<Client> sendBlacklist;
+
+		/// <summary>
 		/// Recieved packets that have not been read on the main thread yet
 		/// </summary>
 		private Queue<SourcedPacket> pendingPackets;
@@ -86,6 +91,7 @@ namespace Dullahan.Net
 			server = null;
 			clients = new List<Client>();
 			pendingPackets = new Queue<SourcedPacket>();
+			sendBlacklist = new HashSet<Client>();
 
 			Environment.Init ();
 			Debug.Log (TAG + " Starting Dullahan Server...");
@@ -127,6 +133,7 @@ namespace Dullahan.Net
 		private void ClientAcceptCallback(IAsyncResult res)
 		{
 			Client c = new Client(server.EndAcceptTcpClient(res));
+			c.Name = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
 			c.dataRead += DataReceived;
 			c.Read();
 			lock (clients)
@@ -134,7 +141,7 @@ namespace Dullahan.Net
 				clients.Add(c);
 			}
 #if DEBUG
-			Debug.Log("Added new client.");
+			Debug.Log("Added new client.\nName: " + c.Name);
 #endif
 			server.BeginAcceptTcpClient(ClientAcceptCallback, null);
 		}
@@ -147,7 +154,7 @@ namespace Dullahan.Net
 				if (clients[i].Idle)
 				{
 #if DEBUG
-					Debug.Log("Client is idle. Starting read...");
+					Debug.Log("Client " + clients[i].Name + " is idle. Starting read...");
 #endif
 					lock (clients)
 					{
@@ -208,7 +215,11 @@ namespace Dullahan.Net
 #endif
 			for(int i = 0; i < clients.Count; i++)
 			{
-				clients[i].Send(packet);
+				lock (clients)
+				{
+					if (!sendBlacklist.Contains(clients[i]))
+						clients[i].Send(packet);
+				}
 			}
 		}
 		public void Send(Packet.DataType type, string data)
@@ -283,7 +294,44 @@ namespace Dullahan.Net
 			//wait, how did the server get this?
 			//i'm gonna stop asking questions
 			return Environment.EXEC_SKIP;
+		}
 
+		[Command(Invocation = "mute", Help = "Tells the server to not send any packets to the given client")]
+		private static int BlacklistClient(string[] args)
+		{
+			if (args.Length < 3)
+				return Environment.EXEC_FAILURE;
+
+			string operation = args[1];
+			string clientName = args[2];
+			for (int i = 0; i < instance.clients.Count; i++)
+			{
+				lock(instance.clients)
+				{
+					if(instance.clients[i].Name == clientName)
+					{
+						if (operation == "add")
+						{
+							instance.sendBlacklist.Add(instance.clients[i]);
+#if DEBUG
+							Debug.Log("No longer sending data to " + instance.clients[i].Name);
+#endif
+						}
+						else if (operation == "rem")
+						{
+							instance.sendBlacklist.Remove(instance.clients[i]);
+#if DEBUG
+							Debug.Log("Resuming sending data to " + instance.clients[i].Name);
+#endif
+						}
+						else
+							return Environment.EXEC_FAILURE;
+						return Environment.EXEC_SUCCESS;
+					}
+				}
+			}
+
+			return Environment.EXEC_FAILURE;
 		}
 		#endregion
 	}
