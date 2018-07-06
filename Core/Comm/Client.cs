@@ -1,10 +1,9 @@
-﻿using Dullahan.Comm;
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-namespace Dullahan
+namespace Dullahan.Comm
 {
 	/// <summary>
 	/// Connects to a Dullahan Server running in a Unity instance.
@@ -13,8 +12,7 @@ namespace Dullahan
 	{
 		#region STATIC_VARS
 
-		private const string L_TAG = "[Local]";
-		private const string R_TAG = "[Remote]";
+		private const string DEBUG_TAG = "[DEBUG]";
 
 		private const int SDB_LENGTH = 1024;
 		#endregion
@@ -77,9 +75,7 @@ namespace Dullahan
 			int byteC = stream.EndRead (res);
 			
 #if DEBUG
-			Console.ForegroundColor = ConsoleColor.DarkGray;
-			Console.WriteLine ("\n" + L_TAG + " Read " + byteC + "B");
-			Console.ResetColor ();
+			Console.WriteLine ("\n" + DEBUG_TAG + " Read " + byteC + "B");
 #endif
 
 			serverData += Encoding.ASCII.GetString (serverDataBuffer, 0, byteC);
@@ -98,9 +94,7 @@ namespace Dullahan
 			stream.EndWrite (res);
 
 #if DEBUG
-			Console.ForegroundColor = ConsoleColor.DarkGray;
-			Console.WriteLine (L_TAG + " Finished sending");
-			Console.ResetColor ();
+			Console.WriteLine (DEBUG_TAG + " Finished sending");
 #endif
 		}
 		#endregion

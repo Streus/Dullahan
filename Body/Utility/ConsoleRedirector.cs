@@ -7,15 +7,17 @@ namespace Dullahan.Utility
 	public class ConsoleRedirector : TextWriter
 	{
 		private StringBuilder buffer;
+		private LogType type;
 
-		public ConsoleRedirector()
+		public ConsoleRedirector(LogType type)
 		{
 			buffer = new StringBuilder ();
+			this.type = type;
 		}
 
 		public override void Flush()
 		{
-			Debug.Log (buffer.ToString ());
+			Debug.unityLogger.LogFormat(type, buffer.ToString());
 			buffer.Length = 0;
 		}
 

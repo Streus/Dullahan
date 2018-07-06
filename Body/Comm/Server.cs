@@ -85,6 +85,12 @@ namespace Dullahan.Comm
 				Destroy (gameObject);
 			}
 
+			//redirect stdout to the Unity console
+			Console.SetOut(new Utility.ConsoleRedirector(LogType.Log));
+
+			//redirect stderr to the Unity console
+			Console.SetError(new Utility.ConsoleRedirector(LogType.Error));
+
 			server = null;
 			client = null;
 

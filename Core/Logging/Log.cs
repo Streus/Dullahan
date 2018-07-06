@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using UnityEngine;
-using Dullahan.Comm;
 
 namespace Dullahan.Logging
 {
@@ -16,7 +14,7 @@ namespace Dullahan.Logging
 		/// <summary>
 		/// Command result status code.
 		/// </summary>
-		public const int EXEC_SUCCESS = 0, EXEC_SKIP = 1, EXEC_FAILURE = 2;
+		public const int EXEC_SUCCESS = 0, EXEC_SKIP = 1, EXEC_FAILURE = 2, EXEC_NOTFOUND = 3;
 
 		/// <summary>
 		/// Collection of all commands in the project.
@@ -41,10 +39,9 @@ namespace Dullahan.Logging
 			if (initalized)
 				return;
 
-			Debug.Log ("[DUL] Initializing Log...");
-
-			//redirect Console.Write to Unity's logger
-			//Console.SetOut (new Utility.ConsoleRedirector ());
+#if DEBUG
+			Console.WriteLine ("Initializing Log...");
+#endif
 
 			//instantiate commands collection
 			commands = new Dictionary<string, Command> ();
@@ -66,7 +63,7 @@ namespace Dullahan.Logging
 						CommandDelegate c = (CommandDelegate)Delegate.CreateDelegate(typeof(CommandDelegate), m, false);
 						if (c == null)
 						{
-							Debug.LogError(m.Name + " is marked as a Dullahan Command, but it does not match "
+							Console.Error.WriteLine(m.Name + " is marked as a Dullahan Command, but it does not match "
 								+ "the required method signature: int name(string[]) .");
 							continue;
 						}
@@ -74,7 +71,7 @@ namespace Dullahan.Logging
 						//validate command invocation
 						if (cAttrs[0].Invocation == null || cAttrs[0].Invocation == "")
 						{
-							Debug.LogError(m.Name + " does not have a valid Invocation.");
+							Console.Error.WriteLine(m.Name + " does not have a valid Invocation.");
 							continue;
 						}
 
@@ -93,7 +90,7 @@ namespace Dullahan.Logging
 							//notify that command was not added
 							else
 							{
-								Debug.LogError ("A command with the invokation " +
+								Console.Error.WriteLine("A command with the invokation " +
 									com.invocation + " already exists.\nAssembly: " +
 									a.FullName + "\nType: " + t.FullName + "\nMethod: " + m.Name);
 								continue;
@@ -102,7 +99,9 @@ namespace Dullahan.Logging
 
 						//add valid command to collection
 						commands.Add(cAttrs[0].Invocation, com);
-						Debug.Log ("Added \"" + com.invocation + "\" to command list."); //DEBUG
+#if DEBUG
+						Console.WriteLine("Added \"" + com.invocation + "\" to command list.");
+#endif
 					}
 				}
 			}
@@ -177,13 +176,17 @@ namespace Dullahan.Logging
 
 			Command c;
 			string invocation = args[0].ToLower ();
-			Debug.Log ("Log received invoke request: " + invocation); //DEBUG
+#if DEBUG
+			Console.WriteLine ("Log received invoke request: " + invocation);
+#endif
 			if (commands.TryGetValue (invocation, out c))
 			{
 				//found command, try executing
 				try
 				{
-					Debug.Log ("Executing " + invocation); //DEBUG
+#if DEBUG
+					Console.WriteLine ("Executing " + invocation);
+#endif
 					status = c.function.Invoke (args);
 				}
 				catch (Exception e)
@@ -194,6 +197,7 @@ namespace Dullahan.Logging
 			else
 			{
 				Println ("Could not find " + args[0] + ".");
+				status = EXEC_NOTFOUND;
 			}
 
 			return status;
@@ -201,7 +205,7 @@ namespace Dullahan.Logging
 
 		public static void Print(string msg)
 		{
-			Server.GetInstance ().Send (msg);
+
 		}
 
 		public static void Println(string msg)

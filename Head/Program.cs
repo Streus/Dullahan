@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Net;
-using System.Reflection;
+using Dullahan.Comm;
 
 namespace Dullahan
 {
@@ -26,7 +26,7 @@ namespace Dullahan
 		{
 			//default values
 			string ip = "127.0.0.1";
-			int port = Comm.Protocol.DEFAULT_PORT;
+			int port = Protocol.DEFAULT_PORT;
 			ExecutionMode mode = ExecutionMode.listen;
 
 			//misc special flags that must be first
