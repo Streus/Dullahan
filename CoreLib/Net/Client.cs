@@ -5,7 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace Dullahan.Comm
+namespace Dullahan.Net
 {
 	/// <summary>
 	/// Manages the connection to a Dullahan server/client

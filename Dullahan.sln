@@ -7,14 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Body", "Body\Body.csproj", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Head", "Head\Head.csproj", "{668FB8C1-3C04-4493-A81F-4406B7BFDB1B}"
 EndProject
-Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Core", "Core\Core.shproj", "{6D78C538-6442-4DFE-BD9F-674BF517E6A7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core", "CoreLib\Core.csproj", "{0703F018-EAD9-4640-A7E9-99095B8C3ACC}"
 EndProject
 Global
-	GlobalSection(SharedMSBuildProjectFiles) = preSolution
-		Core\Core.projitems*{5df71543-7021-4d27-8a0a-45af5e9a8937}*SharedItemsImports = 4
-		Core\Core.projitems*{668fb8c1-3c04-4493-a81f-4406b7bfdb1b}*SharedItemsImports = 4
-		Core\Core.projitems*{6d78c538-6442-4dfe-bd9f-674bf517e6a7}*SharedItemsImports = 13
-	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
@@ -28,6 +23,10 @@ Global
 		{668FB8C1-3C04-4493-A81F-4406B7BFDB1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{668FB8C1-3C04-4493-A81F-4406B7BFDB1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{668FB8C1-3C04-4493-A81F-4406B7BFDB1B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0703F018-EAD9-4640-A7E9-99095B8C3ACC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0703F018-EAD9-4640-A7E9-99095B8C3ACC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0703F018-EAD9-4640-A7E9-99095B8C3ACC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0703F018-EAD9-4640-A7E9-99095B8C3ACC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

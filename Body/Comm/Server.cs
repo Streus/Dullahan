@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace Dullahan.Comm
+namespace Dullahan.Net
 {
 	/// <summary>
 	/// Handles communication between Dullhan Body (Unity side) and 
@@ -40,6 +40,11 @@ namespace Dullahan.Comm
 
 		private TcpListener server;
 		private List<Client> clients;
+
+		/// <summary>
+		/// Recieved packets that have not been read on the main thread yet
+		/// </summary>
+		private Queue<SourcedPacket> pendingPackets;
 		#endregion
 
 		#region STATIC_METHODS
@@ -80,6 +85,7 @@ namespace Dullahan.Comm
 
 			server = null;
 			clients = new List<Client>();
+			pendingPackets = new Queue<SourcedPacket>();
 
 			Environment.Init ();
 			Debug.Log (TAG + " Starting Dullahan Server...");
@@ -123,7 +129,10 @@ namespace Dullahan.Comm
 			Client c = new Client(server.EndAcceptTcpClient(res));
 			c.dataRead += DataReceived;
 			c.Read();
-			clients.Add(c);
+			lock (clients)
+			{
+				clients.Add(c);
+			}
 #if DEBUG
 			Debug.Log("Added new client.");
 #endif
@@ -140,7 +149,32 @@ namespace Dullahan.Comm
 #if DEBUG
 					Debug.Log("Client is idle. Starting read...");
 #endif
-					clients[i].Read();
+					lock (clients)
+					{
+						clients[i].Read();
+					}
+				}
+			}
+
+			//check for pending received data
+			while(pendingPackets.Count > 0)
+			{
+				lock (pendingPackets)
+				{
+					SourcedPacket sp = pendingPackets.Dequeue();
+					switch (sp.packet.type)
+					{
+						case Packet.DataType.command:
+							//run command and pass back success code
+							Packet responsePacket = new Packet(Packet.DataType.response);
+							responsePacket.logResult = Environment.InvokeCommand(sp.packet.data);
+							sp.client.Send(responsePacket);
+							break;
+
+						default:
+							//server only takes commands
+							break;
+					}
 				}
 			}
 		}
@@ -154,17 +188,12 @@ namespace Dullahan.Comm
 #if DEBUG
 			Debug.Log("Received packet.\n" + packet.ToString());
 #endif
-			switch(packet.type)
+			SourcedPacket sp = new SourcedPacket();
+			sp.client = source;
+			sp.packet = packet;
+			lock (pendingPackets)
 			{
-				case Packet.DataType.command:
-					Packet responsePacket = new Packet(Packet.DataType.response);
-					responsePacket.logResult = Environment.InvokeCommand(packet.data);
-					source.Send(responsePacket);
-					break;
-
-				default:
-					//server only takes commands
-					break;
+				pendingPackets.Enqueue(sp);
 			}
 		}
 
@@ -191,6 +220,14 @@ namespace Dullahan.Comm
 
 		#region INTERNAL_TYPES
 
+		/// <summary>
+		/// A packet and its source client
+		/// </summary>
+		private struct SourcedPacket
+		{
+			public Packet packet;
+			public Client client;
+		}
 		#endregion
 
 		#region DEFAULT_COMMANDS

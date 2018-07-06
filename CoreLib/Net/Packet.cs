@@ -1,5 +1,5 @@
 ﻿
-namespace Dullahan.Comm
+namespace Dullahan.Net
 {
 	/// <summary>
 	/// Wrapper for data sent between clients and servers

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Net;
-using Dullahan.Comm;
+using Dullahan.Net;
 
 namespace Dullahan
 {
@@ -130,7 +130,13 @@ namespace Dullahan
 
 		private static void ReceiveResponse(Client endpoint, Packet packet)
 		{
+			if(packet.logResult != 0)
+			{
+				Console.ForegroundColor = ConsoleColor.Red;
+				Console.WriteLine("Encountered error!");
+			}
 			Console.WriteLine(packet.data);
+			Console.ResetColor();
 		}
 
 		/// <summary>
