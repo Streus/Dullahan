@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Collections;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using UnityEngine;
-using Dullahan.Logging;
+using System.Collections.Generic;
 
 namespace Dullahan.Comm
 {
@@ -37,22 +35,11 @@ namespace Dullahan.Comm
 		/// </summary>
 		private bool running;
 
-		/// <summary>
-		/// Data recieved from the client
-		/// </summary>
-		private string clientData;
-		private byte[] clientDataBuffer;
-
-		/// <summary>
-		/// Indicates if there is data to be read from clientData
-		/// </summary>
-		private bool unreadData;
-
 		[SerializeField]
-		private int port = Protocol.DEFAULT_PORT;
+		private int port = Client.DEFAULT_PORT;
 
 		private TcpListener server;
-		private TcpClient client;
+		private List<Client> clients;
 		#endregion
 
 		#region STATIC_METHODS
@@ -92,9 +79,9 @@ namespace Dullahan.Comm
 			Console.SetError(new Utility.ConsoleRedirector(LogType.Error));
 
 			server = null;
-			client = null;
+			clients = new List<Client>();
 
-			Log.Init ();
+			Environment.Init ();
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
 		}
@@ -121,97 +108,85 @@ namespace Dullahan.Comm
 			IPAddress ip = IPAddress.Parse(DEFAULT_IP);
 			server = new TcpListener (ip, port);
 
-			server.Start ();
+			server.Start();
 			running = true;
 
-			server.BeginAcceptTcpClient (ClientAcceptCallback, server);
-			StartCoroutine(WaitForAccept ());
-		}
-
-		private void ClientAcceptCallback(IAsyncResult res)
-		{
-			TcpListener listener = (TcpListener)res.AsyncState;
-			client = listener.EndAcceptTcpClient (res);
-		}
-
-		private IEnumerator WaitForAccept()
-		{
-			while (client == null)
-			{
-				Debug.Log (TAG + " Waiting..."); //DEBUG
-				yield return new WaitForEndOfFrame();
-			}
-			Debug.Log (TAG + " Starting Listen");
-			StartCoroutine (Listen ());
-		}
-
-		private IEnumerator Listen()
-		{
-			clientData = "";
-			clientDataBuffer = new byte[CDB_LENGTH];
-			unreadData = false;
-
-			//wait for client connection
-			NetworkStream stream;
-			stream = client.GetStream ();
-
-			Debug.Log (TAG + " Starting Read"); //DEBUG
-
-			//read incoming traffic from client
-			while (IsRunning())
-			{
-				Debug.Log (TAG + " Listening for data..."); //DEBUG
-				yield return null;
-
-				if (!unreadData)
-					stream.BeginRead (clientDataBuffer, 0, clientDataBuffer.Length, ReadFinished, stream);
-				else
-				{
-					Debug.Log (TAG + " Invoking \"" + clientData + "\""); //DEBUG
-					int success = Log.InvokeCommand (clientData);
-					clientData = "";
-					clientDataBuffer = new byte[CDB_LENGTH];
-					unreadData = false;
-				}
-			}
-
-			Disconnect(null);
-
-			Debug.Log (TAG + " Closed connection");
-		}
-
-		private void ReadFinished(IAsyncResult res)
-		{
-			NetworkStream stream = (NetworkStream)res.AsyncState;
-
-			int byteC = stream.EndRead (res);
-			Debug.Log (TAG + " Read " + byteC + "B"); //DEBUG
-
-			clientData += Encoding.ASCII.GetString (clientDataBuffer, 0, byteC);
-			Debug.Log ("clientData: \"" + clientData + "\""); //DEBUG
-
-			while (stream.DataAvailable)
-			{
-				stream.BeginRead (clientDataBuffer, 0, clientDataBuffer.Length, ReadFinished, stream);
-			}
-
-			unreadData = true;
+			server.BeginAcceptTcpClient (ClientAcceptCallback, null);
 		}
 
 		/// <summary>
-		/// Send data to the currently connected client
+		/// Loops waiting for incoming connections, adding a new Client when one is found
 		/// </summary>
-		/// <param name="data"></param>
-		public void Send(string data)
+		/// <param name="res"></param>
+		private void ClientAcceptCallback(IAsyncResult res)
 		{
-			Debug.Log (TAG + " Sending " + data + " to client."); //DEBUG
-			byte[] bytes = Encoding.ASCII.GetBytes (data);
-			client.GetStream ().BeginWrite (bytes, 0, bytes.Length, SendFinished, client);
+			Client c = new Client(server.EndAcceptTcpClient(res));
+			c.dataRead += DataReceived;
+			c.Read();
+			clients.Add(c);
+#if DEBUG
+			Debug.Log("Added new client.");
+#endif
+			server.BeginAcceptTcpClient(ClientAcceptCallback, null);
 		}
-		private void SendFinished(IAsyncResult res)
+
+		public void Update()
 		{
-			client.GetStream ().EndWrite (res);
+			//find idle clients and start reading from them
+			for(int i = 0; i < clients.Count; i++)
+			{
+				if (clients[i].Idle)
+				{
+#if DEBUG
+					Debug.Log("Client is idle. Starting read...");
+#endif
+					clients[i].Read();
+				}
+			}
 		}
+
+		/// <summary>
+		/// Received data from a client.
+		/// </summary>
+		/// <param name="packet"></param>
+		private void DataReceived(Client source, Packet packet)
+		{
+#if DEBUG
+			Debug.Log("Received packet.\n" + packet.ToString());
+#endif
+			switch(packet.type)
+			{
+				case Packet.DataType.command:
+					Packet responsePacket = new Packet(Packet.DataType.response);
+					responsePacket.logResult = Environment.InvokeCommand(packet.data);
+					source.Send(responsePacket);
+					break;
+
+				default:
+					//server only takes commands
+					break;
+			}
+		}
+
+		/// <summary>
+		/// Send data to all connected clients
+		/// </summary>
+		/// <param name="packet"></param>
+		public void Send(Packet packet)
+		{
+#if DEBUG
+			Debug.Log("Sending packet.\n" + packet.ToString());
+#endif
+			for(int i = 0; i < clients.Count; i++)
+			{
+				clients[i].Send(packet);
+			}
+		}
+		public void Send(Packet.DataType type, string data)
+		{
+			Send(new Packet(type, data));
+		}
+
 		#endregion
 
 		#region INTERNAL_TYPES
@@ -229,14 +204,14 @@ namespace Dullahan.Comm
 		private static int Handshake(string[] args)
 		{
 			if (instance == null)
-				return Log.EXEC_FAILURE;
+				return Environment.EXEC_FAILURE;
 
-			instance.Send ("Connection to '" + Application.productName + "' Established!");
-			return Log.EXEC_SUCCESS;
+			instance.Send (Packet.DataType.response, "Connection to '" + Application.productName + "' Established!");
+			return Environment.EXEC_SUCCESS;
 		}
 
 		/// <summary>
-		/// Diconnect the remote client from the server.
+		/// Diconnect all remote clients from the server.
 		/// </summary>
 		/// <param name="args"></param>
 		/// <returns></returns>
@@ -248,9 +223,10 @@ namespace Dullahan.Comm
 				try
 				{
 					instance.running = false;
-					instance.client.GetStream ().Close ();
-					instance.client.Close ();
-					instance.client = null;
+					for(int i = 0; i < instance.clients.Count; i++)
+					{
+						instance.clients[i].Disconnect();
+					}
 
 					instance.server.Stop ();
 					instance.server = null;
@@ -259,17 +235,17 @@ namespace Dullahan.Comm
 				{
 					//something went wrong
 					Debug.LogException (e);
-					return Log.EXEC_FAILURE;
+					return Environment.EXEC_FAILURE;
 				}
 
 				//successfully disconnected
-				return Log.EXEC_SUCCESS;
+				return Environment.EXEC_SUCCESS;
 			}
 
 			//nothing to disconnect from, strangely enough
 			//wait, how did the server get this?
 			//i'm gonna stop asking questions
-			return Log.EXEC_SKIP;
+			return Environment.EXEC_SKIP;
 
 		}
 		#endregion

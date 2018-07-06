@@ -2,49 +2,44 @@
 namespace Dullahan.Comm
 {
 	/// <summary>
-	/// Contains information for communication between a server and client
+	/// Defines the types of packets that can be sent between clients and servers
 	/// </summary>
-	public static class Protocol
+	public enum PacketType
 	{
-		#region STATIC_VARS
-
-		public const int DEFAULT_PORT = 8080;
-		#endregion
-
-		#region INTERNAL_TYPES
+		/// <summary>
+		/// An operation that the server must perform and for which a response must be returned
+		/// </summary>
+		command,
 
 		/// <summary>
-		/// Defines the types of packets that can be sent between clients and servers
+		/// The direct result of an executed command sent to a client
 		/// </summary>
-		public enum PacketType
-		{
-			/// <summary>
-			/// An operation that the server must perform and for which a response must be returned
-			/// </summary>
-			command,
-
-			/// <summary>
-			/// The direct result of an executed command sent to a client
-			/// </summary>
-			response,
-
-			/// <summary>
-			/// A prompted or unpropmted transmission of data to a client
-			/// </summary>
-			logentry
-		}
+		response,
 
 		/// <summary>
-		/// Wrapper for data sent between clients and servers
+		/// A prompted or unpropmted transmission of data to a client
 		/// </summary>
-		[System.Serializable]
-		public class Packet
-		{
-			public PacketType type;
-			public string data;
+		logentry
+	}
 
-			public int logResult;
+	/// <summary>
+	/// Wrapper for data sent between clients and servers
+	/// </summary>
+	[System.Serializable]
+	public class Packet
+	{
+		public Packet(PacketType type) : this(type, null) { }
+		public Packet(PacketType type, string data)
+		{
+			this.type = type;
+			this.data = data;
 		}
-		#endregion
+
+		public PacketType type;
+
+		public char[] tag;
+		public string data;
+
+		public int logResult;
 	}
 }

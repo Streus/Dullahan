@@ -1,5 +1,5 @@
 ﻿
-namespace Dullahan.Logging
+namespace Dullahan
 {
 	/// <summary>
 	/// Simple binder for command data

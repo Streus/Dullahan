@@ -2,13 +2,20 @@
 using System.Collections.Generic;
 using System.Reflection;
 
-namespace Dullahan.Logging
+namespace Dullahan
 {
     /// <summary>
-    /// Entrypoint for sending logging information to clients.
+    /// Contains environment information and operations for Dullahan
     /// </summary>
     public static class Environment
     {
+		#region TOKEN_CONSTANTS
+
+		public const char TERM_SEP = ' ';
+		public const char VAR_MARKER = '%';
+		public const char MERGE_MARKER = '\"';
+		#endregion
+
 		#region STATIC_VARS
 
 		/// <summary>
@@ -22,7 +29,7 @@ namespace Dullahan.Logging
 		private static Dictionary<string, Command> commands;
 
 		/// <summary>
-		/// Has the logging system been initialized?
+		/// Has the environment system been initialized?
 		/// </summary>
 		private static bool initalized = false;
 
@@ -123,7 +130,7 @@ namespace Dullahan.Logging
 
 			for (int i = 0; i < raw.Length; i++)
 			{
-				if (raw[i] == '\"') //start or end space-ignoring group
+				if (raw[i] == MERGE_MARKER) //start or end space-ignoring group
 				{
 					merging = !merging;
 					if (!merging)
@@ -132,18 +139,17 @@ namespace Dullahan.Logging
 						mergeString = "";
 					}
 				}
-				else if (raw[i] == '%' || raw[i] == '!') //try to resolve a variable
+				else if (raw[i] == VAR_MARKER) //try to resolve a variable
 				{
-					char delim = raw[i] == '%' ? '%' : '!';
 					int start = i + 1;
-					int end = raw.IndexOf (delim, start);
+					int end = raw.IndexOf (VAR_MARKER, start);
 					if (end != -1)
 					{
 						mergeString += ""; //TODO resolve environment variable
 						i = end;
 					}
 				}
-				else if (raw[i] == ' ' && !merging) //end of a regular term
+				else if (raw[i] == TERM_SEP && !merging) //end of a regular term
 				{
 					if (mergeString != "")
 						argsList.Add (mergeString);
@@ -191,26 +197,18 @@ namespace Dullahan.Logging
 				}
 				catch (Exception e)
 				{
-					Println ("Failed executing " + args[0] + "\n" + e.ToString ());
+					//TODO some kind of stdout solution
+					//Println ("Failed executing " + args[0] + "\n" + e.ToString ());
 				}
 			}
 			else
 			{
-				Println ("Could not find " + args[0] + ".");
+				//TODO some kind of stdout solution
+				//Println ("Could not find " + args[0] + ".");
 				status = EXEC_NOTFOUND;
 			}
 
 			return status;
-		}
-
-		public static void Print(string msg)
-		{
-
-		}
-
-		public static void Println(string msg)
-		{
-			Print (msg + "\n");
 		}
         #endregion
 

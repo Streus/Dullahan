@@ -26,7 +26,7 @@ namespace Dullahan
 		{
 			//default values
 			string ip = "127.0.0.1";
-			int port = Protocol.DEFAULT_PORT;
+			int port = Client.DEFAULT_PORT;
 			ExecutionMode mode = ExecutionMode.listen;
 
 			//misc special flags that must be first
@@ -37,14 +37,14 @@ namespace Dullahan
 			{
 				//print help and exit
 				Console.WriteLine ("help is todo");
-				Environment.Exit (0);
+				System.Environment.Exit (0);
 			}
 			//version info flag
 			else if (args[currArg] == versionFlag || args[currArg] == versionFlagLong)
 			{
 				//print help and exit
 				Console.WriteLine ("version is todo");
-				Environment.Exit (0);
+				System.Environment.Exit (0);
 			}
 
 			//read args
@@ -62,8 +62,10 @@ namespace Dullahan
 					string pStr = TryGetArg (args, ++currArg, flag);
 					if (!int.TryParse (pStr, out port))
 					{
+						Console.ForegroundColor = ConsoleColor.Red;
 						Console.Error.WriteLine ("\"" + pStr + "\" is not a valid port");
-						Environment.Exit (1);
+						Console.ResetColor();
+						System.Environment.Exit (1);
 					}
 				}
 				//execution mode flag
@@ -73,19 +75,26 @@ namespace Dullahan
 					string mStr = TryGetArg (args, ++currArg, flag);
 					if (!Enum.TryParse<ExecutionMode> (mStr, out mode))
 					{
+						Console.ForegroundColor = ConsoleColor.Red;
 						Console.Error.WriteLine ("\"" + mStr + "\" is not a valid mode");
-						Environment.Exit (1);
+						Console.ResetColor();
+						System.Environment.Exit (1);
 					}
 				}
 				//unknown argument
 				else
 				{
+					Console.ForegroundColor = ConsoleColor.Red;
 					Console.Error.WriteLine ("Unknown or unexpected argument \"" + args[currArg] + "\"");
-					Environment.Exit (1);
+					Console.ResetColor();
+					System.Environment.Exit (1);
 				}
 
 				currArg++;
 			}
+
+			//initialize environment
+			Environment.Init();
 
 			//start tcp client
 			Client c = null;
@@ -95,18 +104,33 @@ namespace Dullahan
 			}
 			catch (FormatException)
 			{
+				Console.ForegroundColor = ConsoleColor.Red;
 				Console.Error.WriteLine ("\"" + ip + "\" is not a valid ip address.");
-				Environment.Exit (1);
+				Console.ResetColor();
+				System.Environment.Exit (1);
 			}
 
+			c.dataRead += ReceiveResponse;
 			c.Start ();
 
 			//block for client to connect
-			while (!c.Connnected)
-			{
-				Console.Write ("\rConnecting...");
-			}
+			while (!c.Connected) { }
 			Console.WriteLine ("\nConnected!");
+
+			//verify connection
+			c.Send(new Packet(Packet.DataType.command, "ping"));
+
+			//block for response
+			while (true)
+			{
+				if (c.Idle)
+					c.Read();
+			}
+		}
+
+		private static void ReceiveResponse(Client endpoint, Packet packet)
+		{
+			Console.WriteLine(packet.data);
 		}
 
 		/// <summary>
@@ -129,7 +153,7 @@ namespace Dullahan
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.Error.WriteLine ("Provided \"" + argName + "\" flag, but no data");
 					Console.ResetColor ();
-					Environment.Exit (1);
+					System.Environment.Exit (1);
 				}
 			}
 			catch (IndexOutOfRangeException)
@@ -137,7 +161,7 @@ namespace Dullahan
 				Console.ForegroundColor = ConsoleColor.Red;
 				Console.Error.WriteLine ("Provided \"" + argName + "\" flag, but no data");
 				Console.ResetColor ();
-				Environment.Exit (1);
+				System.Environment.Exit (1);
 			}
 
 			return res;

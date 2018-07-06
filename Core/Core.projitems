@@ -9,10 +9,13 @@
     <Import_RootNamespace>Dullahan</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Command.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)CommandAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Comm\Client.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Comm\Protocol.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Logging\Command.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Logging\CommandAttribute.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Logging\Log.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Comm\Packet.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Environment.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="$(MSBuildThisFileDirectory)Logging\" />
   </ItemGroup>
 </Project>

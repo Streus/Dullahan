@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Dullahan.Logging
+namespace Dullahan
 {
 	[AttributeUsage(AttributeTargets.Delegate | AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 	public class CommandAttribute : Attribute

@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Reflection;
 
-namespace Dullahan.Logging
+namespace Dullahan
 {
     /// <summary>
-    /// Entrypoint for sending logging information to clients.
+    /// Contains environment information and operations for Dullahan
     /// </summary>
     public static class Environment
     {
@@ -22,7 +22,7 @@ namespace Dullahan.Logging
 		private static Dictionary<string, Command> commands;
 
 		/// <summary>
-		/// Has the logging system been initialized?
+		/// Has the environment system been initialized?
 		/// </summary>
 		private static bool initalized = false;
 

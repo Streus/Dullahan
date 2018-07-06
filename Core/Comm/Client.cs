@@ -1,35 +1,59 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Dullahan.Comm
 {
 	/// <summary>
-	/// Connects to a Dullahan Server running in a Unity instance.
+	/// Manages the connection to a Dullahan server/client
 	/// </summary>
 	public class Client
 	{
 		#region STATIC_VARS
 
-		private const string DEBUG_TAG = "[DEBUG]";
+		public const int DEFAULT_PORT = 8080;
 
-		private const int SDB_LENGTH = 1024;
+		private const string DEBUG_TAG = "[CLIENT]";
+
+		private const int DB_LENGTH = 1024;
 		#endregion
 
 		#region INSTANCE_VARS
 
-		public bool Connnected { get; private set; }
+		public bool Connected { get; private set; }
+		public bool Reading { get; private set; }
+		public bool Sending { get; private set; }
+
+		/// <summary>
+		/// The availability state of the Client. Returns true if no operations are underway.
+		/// </summary>
+		public bool Idle
+		{
+			get
+			{
+				return Connected && !Reading && !Sending;
+			}
+		}
+
+		/// <summary>
+		/// Triggers when a read operation has finished, and data is available for use
+		/// </summary>
+		public event DataReceivedCallback dataRead;
 
 		private int port;
 
-		private IPAddress serverAddress;
+		private IPAddress address;
 
 		private TcpClient client;
 		private NetworkStream stream;
 
-		private string serverData;
-		private byte[] serverDataBuffer;
+		/// <summary>
+		/// Data received
+		/// </summary>
+		private List<byte> storedData;
 		#endregion
 
 		#region STATIC_METHODS
@@ -38,29 +62,74 @@ namespace Dullahan.Comm
 
 		#region INSTANCE_METHODS
 
-		public Client(IPAddress serverAddress, int port = Protocol.DEFAULT_PORT)
+		/// <summary>
+		/// Create a new Client object that needs to be connected to a remote endpoint
+		/// </summary>
+		/// <param name="address">The address to which connection wiil be attempted</param>
+		/// <param name="port">The port, what else?</param>
+		public Client(IPAddress address, int port = DEFAULT_PORT)
 		{
-			this.serverAddress = serverAddress;
+			this.address = address;
 			this.port = port;
 
-			Connnected = false;
+			Connected = Reading = Sending = false;
 
-			serverData = "";
-			serverDataBuffer = new byte[SDB_LENGTH];
+			client = new TcpClient();
+			stream = null;
+
+			storedData = new List<byte>();
 		}
 
+		/// <summary>
+		/// Create a new Client objct with an existing and connected TcpClient
+		/// </summary>
+		/// <param name="existingClient"></param>
+		public Client(TcpClient existingClient)
+		{
+			client = existingClient;
+			stream = client.GetStream();
+
+			Connected = true;
+			Reading = Sending = false;
+
+			address = null;
+			port = -1;
+
+			storedData = new List<byte>();
+		}
+
+		/// <summary>
+		/// If the Client is not connected to an endpoint, try connecting.
+		/// This function is async.
+		/// </summary>
 		public void Start()
 		{
-			//establish connection
-			IPEndPoint ipep = new IPEndPoint (serverAddress, port);
-			client = new TcpClient ("localhost", port); //TODO paramatize host address
-			stream = client.GetStream ();
+			if (!Connected)
+			{
+				//establish connection
+				client.BeginConnect(address, port, ConnectFinished, client);
+			}
+		}
 
-			//send a basic handshake request to the Body
-			byte[] sendBytes = Encoding.ASCII.GetBytes ("ping");
-			stream.BeginWrite (sendBytes, 0, sendBytes.Length, SendFinished, stream);
+		private void ConnectFinished(IAsyncResult res)
+		{
+			//connection established
+			stream = client.GetStream();
+			Connected = true;
+		}
 
-			stream.BeginRead (serverDataBuffer, 0, serverDataBuffer.Length, ReadFinished, stream);
+		/// <summary>
+		/// Read from the currently open connection
+		/// </summary>
+		public void Read()
+		{
+			if (stream != null)
+			{
+				//begin reading operation
+				byte[] dataBuffer = new byte[DB_LENGTH];
+				stream.BeginRead(dataBuffer, 0, dataBuffer.Length, ReadFinished, dataBuffer);
+				Reading = true;
+			}
 		}
 
 		/// <summary>
@@ -69,23 +138,75 @@ namespace Dullahan.Comm
 		/// <param name="res"></param>
 		private void ReadFinished(IAsyncResult res)
 		{
-			Connnected = true;
-			NetworkStream stream = (NetworkStream)res.AsyncState;
-
+			byte[] dataBuffer = (byte[])res.AsyncState;
 			int byteC = stream.EndRead (res);
 			
 #if DEBUG
-			Console.WriteLine ("\n" + DEBUG_TAG + " Read " + byteC + "B");
+			Console.WriteLine (DEBUG_TAG + " Read " + byteC + "B");
 #endif
 
-			serverData += Encoding.ASCII.GetString (serverDataBuffer, 0, byteC);
+			//add new data in the buffer to the store
+			for (int i = 0; i < byteC; i++)
+				storedData.Add(dataBuffer[i]);
 
-			while (stream.DataAvailable)
+			//more data to read
+			if (stream.DataAvailable)
 			{
-				stream.BeginRead (serverDataBuffer, 0, serverDataBuffer.Length, ReadFinished, stream);
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " More data, continuing read.");
+#endif
+				stream.BeginRead(dataBuffer, 0, dataBuffer.Length, ReadFinished, dataBuffer);
 			}
+			//all data read, resolve packet and notify listeners
+			else
+			{
+				Packet data = null;
+				try
+				{
+					MemoryStream ms = new MemoryStream();
+					BinaryFormatter formatter = new BinaryFormatter();
+					byte[] sd = storedData.ToArray();
+					ms.Write(sd, 0, sd.Length);
+					ms.Seek(0, SeekOrigin.Begin);
+					data = (Packet)formatter.Deserialize(ms);
+				}
+				catch(Exception e)
+				{
+					Console.Error.Write(e);
+					Send(new Packet(Packet.DataType.response, "Error reading provided packet.\n" + e.Message));
+				}
 
-			Console.WriteLine (serverData);
+				storedData.Clear();
+				Reading = false;
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Finished read");
+#endif
+				if (dataRead != null && data != null)
+					dataRead(this, data);
+			}
+		}
+
+		public void Send(Packet packet)
+		{
+			if (stream != null)
+			{
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Sending \"" + packet.data + "\"");
+#endif
+				//convert packet into binary data
+				byte[] sendBytes;
+				BinaryFormatter formatter = new BinaryFormatter();
+				using (MemoryStream ms = new MemoryStream())
+				{
+					formatter.Serialize(ms, packet);
+					sendBytes = ms.ToArray();
+				}
+
+				//begin send operation
+				stream.BeginWrite(sendBytes, 0, sendBytes.Length, SendFinished, stream);
+
+				Sending = true;
+			}
 		}
 
 		private void SendFinished(IAsyncResult res)
@@ -96,11 +217,20 @@ namespace Dullahan.Comm
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Finished sending");
 #endif
+			Sending = false;
+		}
+
+		public void Disconnect()
+		{
+			stream.Close();
+			client.Close();
+			Sending = Reading = Connected = false;
 		}
 		#endregion
 
 		#region INTERNAL_TYPES
 
+		public delegate void DataReceivedCallback(Client endpoint, Packet data);
 		#endregion
 	}
 }
