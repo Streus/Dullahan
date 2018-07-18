@@ -219,7 +219,7 @@ namespace Dullahan.Net
 			{
 				lock (clients)
 				{
-					if (!sendBlacklist.Contains(clients[i]))
+					if (packet.type != Packet.DataType.management && !sendBlacklist.Contains(clients[i]))
 						clients[i].Send(packet);
 				}
 			}
@@ -265,7 +265,7 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="args"></param>
 		/// <returns></returns>
-		[Command(Invocation = "logout", HelpFile = "res:logout")]
+		[Command(Invocation = "logout-all", HelpFile = "res:logout")]
 		private static int Disconnect(string[] args)
 		{
 			if (instance != null)

@@ -41,71 +41,73 @@ namespace Dullahan
 			int port = Client.DEFAULT_PORT;
 			ExecutionMode mode = ExecutionMode.listen;
 
-			//misc special flags that must be first
-			int currArg = 0;
+			if (args.Length > 0)
+			{
+				int currArg = 0;
 
-			//help flag
-			if (args[currArg] == helpFlag || args[currArg] == helpFlagLong)
-			{
-				//print help and exit
-				Console.WriteLine ("help is todo");
-				System.Environment.Exit (0);
-			}
-			//version info flag
-			else if (args[currArg] == versionFlag || args[currArg] == versionFlagLong)
-			{
-				//print help and exit
-				Console.WriteLine ("version is todo");
-				System.Environment.Exit (0);
-			}
-
-			//read args
-			while (currArg < args.Length)
-			{
-				//ip flag
-				if (args[currArg] == ipFlag)
+				//misc special flags that must be first
+				//help flag
+				if (args[currArg] == helpFlag || args[currArg] == helpFlagLong)
 				{
-					ip = TryGetArg (args, ++currArg, ipFlag);
+					//print help and exit
+					Console.WriteLine("help is todo");
+					System.Environment.Exit(0);
 				}
-				//port flag
-				else if (args[currArg] == portFlag || args[currArg] == portFlagLong)
+				//version info flag
+				else if (args[currArg] == versionFlag || args[currArg] == versionFlagLong)
 				{
-					string flag = args[currArg];
-					string pStr = TryGetArg (args, ++currArg, flag);
-					if (!int.TryParse (pStr, out port))
+					//print help and exit
+					Console.WriteLine("version is todo");
+					System.Environment.Exit(0);
+				}
+
+				//read args
+				while (currArg < args.Length)
+				{
+					//ip flag
+					if (args[currArg] == ipFlag)
+					{
+						ip = TryGetArg(args, ++currArg, ipFlag);
+					}
+					//port flag
+					else if (args[currArg] == portFlag || args[currArg] == portFlagLong)
+					{
+						string flag = args[currArg];
+						string pStr = TryGetArg(args, ++currArg, flag);
+						if (!int.TryParse(pStr, out port))
+						{
+							Console.ForegroundColor = ConsoleColor.Red;
+							Console.Error.WriteLine("\"" + pStr + "\" is not a valid port");
+							Console.ResetColor();
+							System.Environment.Exit(1);
+						}
+					}
+					//execution mode flag
+					else if (args[currArg] == executionModeFlag || args[currArg] == executionModeFlagLong)
+					{
+						string flag = args[currArg];
+						string mStr = TryGetArg(args, ++currArg, flag);
+						if (!Enum.TryParse<ExecutionMode>(mStr, out mode))
+						{
+							Console.ForegroundColor = ConsoleColor.Red;
+							Console.Error.WriteLine("\"" + mStr + "\" is not a valid mode");
+							Console.ResetColor();
+							System.Environment.Exit(1);
+						}
+					}
+					//unknown argument
+					else
 					{
 						Console.ForegroundColor = ConsoleColor.Red;
-						Console.Error.WriteLine ("\"" + pStr + "\" is not a valid port");
+						Console.Error.WriteLine("Unknown or unexpected argument \"" + args[currArg] + "\"");
 						Console.ResetColor();
-						System.Environment.Exit (1);
+						System.Environment.Exit(1);
 					}
-				}
-				//execution mode flag
-				else if (args[currArg] == executionModeFlag || args[currArg] == executionModeFlagLong)
-				{
-					string flag = args[currArg];
-					string mStr = TryGetArg (args, ++currArg, flag);
-					if (!Enum.TryParse<ExecutionMode> (mStr, out mode))
-					{
-						Console.ForegroundColor = ConsoleColor.Red;
-						Console.Error.WriteLine ("\"" + mStr + "\" is not a valid mode");
-						Console.ResetColor();
-						System.Environment.Exit (1);
-					}
-				}
-				//unknown argument
-				else
-				{
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Unknown or unexpected argument \"" + args[currArg] + "\"");
-					Console.ResetColor();
-					System.Environment.Exit (1);
-				}
 
-				currArg++;
+					currArg++;
+				}
 			}
 
-			//initialize environment
 			Environment.Init();
 
 			//start tcp client
@@ -121,7 +123,6 @@ namespace Dullahan
 				Console.ResetColor();
 				System.Environment.Exit (1);
 			}
-
 			if (mode == ExecutionMode.command)
 				client.dataRead += CommandReceiveResponse;
 			else if (mode == ExecutionMode.listen)
@@ -133,36 +134,23 @@ namespace Dullahan
 			Console.WriteLine ("\nConnected!");
 
 			//verify connection
-			client.Send(new Packet(Packet.DataType.command, "ping"));
+			client.SendAndWait(new Packet(Packet.DataType.management, "setup"));
 
-			//block for response
-			while (true)
+			if (mode == ExecutionMode.command)
 			{
-#if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Telling server to mute connection");
-#endif
-				client.Send(new Packet(Packet.DataType.command, "mute add " + client.Name));
+				client.SendAndWait(new Packet(Packet.DataType.command, "mute add " + client.Name));
 
-				string command = Console.ReadLine();
-#if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Telling server to unmute connection");
-#endif
-				client.Send(new Packet(Packet.DataType.command, "mute rem " + client.Name));
-
-				if (client.Idle)
-					client.Read();
-
-				//block until the command finishes
-				blocking = true;
-				while (true)
+				while (client.Connected)
 				{
-					lock(client)
-					{
-						if (!blocking)
-							break;
-					}
+					string input = Console.ReadLine();
+					client.Send(new Packet(Packet.DataType.command, input));
 				}
 			}
+			else if (mode == ExecutionMode.listen)
+			{
+				while (client.Connected) { }
+			}
+			
 		}
 
 		private static void CommandReceiveResponse(Client endpoint, Packet packet)

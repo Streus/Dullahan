@@ -186,8 +186,45 @@ namespace Dullahan.Net
 #if DEBUG
 				Console.WriteLine(DEBUG_TAG + " Finished read");
 #endif
-				if (dataRead != null && data != null)
-					dataRead(this, data);
+				if (data.type == Packet.DataType.management)
+				{
+					//consume packet internally
+					HandleManagementPacket(data);
+				}
+				else
+				{
+					//notify listeners of new packet
+					if (dataRead != null && data != null)
+						dataRead(this, data);
+				}
+			}
+		}
+
+		private void HandleManagementPacket(Packet packet)
+		{
+			string[] data = Environment.ParseInput(packet.data);
+
+			try
+			{
+				switch (data[0])
+				{
+					//inital handshake where the server names the connecting client, and 
+					//passes the name back over the network
+					case "setup":
+						if (Name != null && Name != "")
+							Send(new Packet(Packet.DataType.management, "setup_resp " + Name));
+						break;
+					case "setup_resp":
+						Name = data[1];
+#if DEBUG
+						Console.WriteLine(DEBUG_TAG + " Received name: " + Name);
+#endif
+						break;
+				}
+			}
+			catch(Exception e)
+			{
+				Console.WriteLine(DEBUG_TAG + " There was some error in handling a management packet\n" + e.Message);
 			}
 		}
 
@@ -232,13 +269,22 @@ namespace Dullahan.Net
 		/// <returns></returns>
 		public bool SendAndRead(Packet outbound, DataReceivedCallback onResult)
 		{
-			//TODO this ain't done
-			dataRead += onResult;
+			if(onResult != null)
+				dataRead += onResult;
+
 			Send(outbound);
 			while (Sending) { }
 			Read();
 			while (Reading) { }
+
+			if(onResult != null)
+				dataRead -= onResult;
+
 			return true;
+		}
+		public bool SendAndWait(Packet outbound)
+		{
+			return SendAndRead(outbound, null);
 		}
 
 		public void Disconnect()

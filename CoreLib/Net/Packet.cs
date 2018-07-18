@@ -57,10 +57,13 @@ namespace Dullahan.Net
 		public override string ToString()
 		{
 			string str = "{ ";
-			str += "Type: " + type.ToString() + ", ";
-			str += "Data: \"" + data + "\" }";
+			str += "Type: " + type.ToString();
 
-			return str;
+			if(data != DEFAULT_DATA)
+				str += ", Data: \"" + data + "\"";
+			if (logResult != DEFAULT_LOG_RESULT)
+				str += ", Log Result: " + logResult;
+			return str + " }";
 		}
 
 		public void GetObjectData(SerializationInfo info, StreamingContext context)
@@ -79,6 +82,13 @@ namespace Dullahan.Net
 		/// </summary>
 		public enum DataType
 		{
+			/// <summary>
+			/// For direct communication between clients and the server during 
+			/// management operations, like establishing connections, communicating
+			/// network information, etc.
+			/// </summary>
+			management,
+
 			/// <summary>
 			/// An operation that the server must perform and for which a response must be returned
 			/// </summary>

@@ -18,6 +18,10 @@ namespace Dullahan
 
 		#region STATIC_VARS
 
+#if DEBUG
+		private const string DEBUG_TAG = "[DULENV]";
+#endif
+
 		/// <summary>
 		/// Command result status code.
 		/// </summary>
@@ -47,7 +51,7 @@ namespace Dullahan
 				return;
 
 #if DEBUG
-			Console.WriteLine ("Initializing Environment...");
+			Console.WriteLine (DEBUG_TAG + " Initializing");
 #endif
 
 			//instantiate commands collection
@@ -107,7 +111,7 @@ namespace Dullahan
 						//add valid command to collection
 						commands.Add(cAttrs[0].Invocation, com);
 #if DEBUG
-						Console.WriteLine("Added \"" + com.invocation + "\" to command list.");
+						Console.WriteLine(DEBUG_TAG + " Added \"" + com.invocation + "\" to command list.");
 #endif
 					}
 				}
@@ -183,7 +187,7 @@ namespace Dullahan
 			Command c;
 			string invocation = args[0].ToLower ();
 #if DEBUG
-			Console.WriteLine ("Environment received invoke request: " + invocation);
+			Console.WriteLine (DEBUG_TAG + " Received invoke request: " + invocation);
 #endif
 			if (commands.TryGetValue (invocation, out c))
 			{
@@ -191,20 +195,23 @@ namespace Dullahan
 				try
 				{
 #if DEBUG
-					Console.WriteLine ("Executing " + invocation);
+					Console.WriteLine (DEBUG_TAG + " Executing " + invocation);
 #endif
 					status = c.function.Invoke (args);
 				}
 				catch (Exception e)
 				{
-					//TODO some kind of stdout solution
-					//Println ("Failed executing " + args[0] + "\n" + e.ToString ());
+#if DEBUG
+					Console.WriteLine(DEBUG_TAG + " Execution error: " + e.Message);
+#endif
+					status = EXEC_FAILURE;
 				}
 			}
 			else
 			{
-				//TODO some kind of stdout solution
-				//Println ("Could not find " + args[0] + ".");
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Cound not find \"" + args[0] + "\"");
+#endif
 				status = EXEC_NOTFOUND;
 			}
 
