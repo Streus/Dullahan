@@ -41,6 +41,9 @@
   <ItemGroup>
     <Compile Include="Command.cs" />
     <Compile Include="CommandAttribute.cs" />
+    <Compile Include="Env\IVariable.cs" />
+    <Compile Include="Env\LiteralVariable.cs" />
+    <Compile Include="Env\ProxyVariable.cs" />
     <Compile Include="Net\Client.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Environment.cs" />

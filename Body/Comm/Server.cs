@@ -94,6 +94,7 @@ namespace Dullahan.Net
 			sendBlacklist = new HashSet<Client>();
 
 			Environment.Init ();
+			Environment.CreateVariable("SERVER_PORT", new Env.ProxyVariable(delegate () { return port; }));
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
 		}

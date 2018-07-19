@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Dullahan.Env;
 
 namespace Dullahan
 {
     /// <summary>
     /// Contains environment information and operations for Dullahan
     /// </summary>
-    public static class Environment
+    public class Environment
     {
 		#region TOKEN_CONSTANTS
 
@@ -27,35 +28,40 @@ namespace Dullahan
 		/// </summary>
 		public const int EXEC_SUCCESS = 0, EXEC_SKIP = 1, EXEC_FAILURE = 2, EXEC_NOTFOUND = 3;
 
+		private static Environment instance;
+
+		#endregion
+
+		#region INSTANCE_VARS
+
 		/// <summary>
 		/// Collection of all commands in the project.
 		/// </summary>
-		private static Dictionary<string, Command> commands;
+		private Dictionary<string, Command> commands;
 
 		/// <summary>
-		/// Has the environment system been initialized?
+		/// Collection of all variables defined during runtime
 		/// </summary>
-		private static bool initalized = false;
+		private Dictionary<string, IVariable> variables;
 
-        #endregion
+		#endregion
 
-        #region INSTANCE_VARS
+		#region STATIC_METHODS
 
-        #endregion
-
-        #region STATIC_METHODS
+		public static Environment GetInstance()
+		{
+			if (instance == null)
+				instance = new Environment();
+			return instance;
+		}
 
 		public static void Init()
 		{
-			if (initalized)
-				return;
+			GetInstance();
 
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Initializing");
 #endif
-
-			//instantiate commands collection
-			commands = new Dictionary<string, Command> ();
 			
 			//assemble all methods marked as commands into a local collection
 			foreach(Assembly a in AppDomain.CurrentDomain.GetAssemblies ())
@@ -93,11 +99,11 @@ namespace Dullahan
 						com.helpText = cAttrs[0].Help;
 
 						//default Dullahan commands get precidence
-						if (commands.ContainsKey (com.invocation))
+						if (instance.commands.ContainsKey (com.invocation))
 						{
 							//overwrite user command with Dullahan command
 							if (t.Assembly == typeof(Environment).Assembly)
-								commands.Remove (com.invocation);
+								instance.commands.Remove (com.invocation);
 							//notify that command was not added
 							else
 							{
@@ -109,7 +115,7 @@ namespace Dullahan
 						}
 
 						//add valid command to collection
-						commands.Add(cAttrs[0].Invocation, com);
+						instance.commands.Add(cAttrs[0].Invocation, com);
 #if DEBUG
 						Console.WriteLine(DEBUG_TAG + " Added \"" + com.invocation + "\" to command list.");
 #endif
@@ -117,8 +123,27 @@ namespace Dullahan
 				}
 			}
 
-			//toggle initialization flag
-			initalized = true;
+			//set up default variables
+			//TODO default vars?
+		}
+
+		/// <summary>
+		/// Uninitializes Environment, removing all commands and variables from memory
+		/// </summary>
+		public static void Clear()
+		{
+			if (instance == null)
+				return;
+
+			instance.commands.Clear();
+			instance.variables.Clear();
+
+			instance = null;
+		}
+
+		public static bool HasCommand(string invocation)
+		{
+			return GetInstance().commands.ContainsKey(invocation);
 		}
 
 		/// <summary>
@@ -149,7 +174,9 @@ namespace Dullahan
 					int end = raw.IndexOf (VAR_MARKER, start);
 					if (end != -1)
 					{
-						mergeString += ""; //TODO resolve environment variable
+						object var = GetVariable<object>(raw.Substring(start, end - start));
+						if(var != null)
+							mergeString += var.ToString();
 						i = end;
 					}
 				}
@@ -189,7 +216,7 @@ namespace Dullahan
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Received invoke request: " + invocation);
 #endif
-			if (commands.TryGetValue (invocation, out c))
+			if (GetInstance().commands.TryGetValue (invocation, out c))
 			{
 				//found command, try executing
 				try
@@ -217,10 +244,81 @@ namespace Dullahan
 
 			return status;
 		}
+
+		/// <summary>
+		/// Retrieve a variable via its name
+		/// </summary>
+		/// <typeparam name="T"></typeparam>
+		/// <param name="name"></param>
+		/// <returns></returns>
+		public static T GetVariable<T>(string name)
+		{
+			IVariable var;
+			if(GetInstance().variables.TryGetValue(name, out var))
+			{
+				return var.GetValue<T>();
+			}
+			return default(T);
+		}
+
+		/// <summary>
+		/// Sets the indicated variable to the given value.
+		/// If a variable with the given name does not exist, then one
+		/// is created
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="value"></param>
+		public static void SetVariable(string name, object value)
+		{
+			IVariable var;
+			if(GetInstance().variables.TryGetValue(name, out var))
+			{
+				var.SetValue(value);
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Set \"" + name + "\" to " + value.ToString());
+#endif
+			}
+			else
+			{
+				GetInstance().variables.Add(name, new LiteralVariable(value));
+#if DEBUG
+				Console.WriteLine(DEBUG_TAG + " Created new variable named \"" + name + "\" with value \"" + value.ToString() + "\"");
+#endif
+			}
+		}
+
+		/// <summary>
+		/// Make a new variable.
+		/// Throws an ArgumentException if a variable with the given name already exists
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="var"></param>
+		public static void CreateVariable(string name, IVariable var)
+		{
+			if (GetInstance().variables.ContainsKey(name))
+				throw new ArgumentException("Variable with the name " + name + " already exists");
+
+			GetInstance().variables.Add(name, var);
+#if DEBUG
+			Console.WriteLine(DEBUG_TAG + " Created new variable named \"" + name + "\" with value \"" + var.GetValue<object>().ToString() + "\"");
+#endif
+		}
         #endregion
 
         #region INSTANCE_METHODS
 
+		private Environment()
+		{
+			commands = new Dictionary<string, Command>();
+			variables = new Dictionary<string, IVariable>();
+		}
+
+		~Environment()
+		{
+#if DEBUG
+			Console.WriteLine(DEBUG_TAG + " Environment completely cleared");
+#endif
+		}
         #endregion
 
         #region INTERNAL_TYPES
