@@ -1,5 +1,5 @@
 ﻿
-namespace Dullahan
+namespace Dullahan.Env
 {
 	/// <summary>
 	/// Simple binder for command data

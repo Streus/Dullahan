@@ -39,19 +39,18 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Command.cs" />
-    <Compile Include="CommandAttribute.cs" />
+    <Compile Include="Env\Command.cs" />
+    <Compile Include="Env\CommandAttribute.cs" />
     <Compile Include="Env\IVariable.cs" />
     <Compile Include="Env\LiteralVariable.cs" />
     <Compile Include="Env\ProxyVariable.cs" />
+    <Compile Include="Logging\Log.cs" />
     <Compile Include="Net\Client.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Environment.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Logging\" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
