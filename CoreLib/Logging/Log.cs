@@ -29,6 +29,7 @@ namespace Dullahan.Logging
 		static Log()
 		{
 			tagFilter = new HashSet<string>();
+			FilterMode = FilterPolicy.exclusive;
 		}
 
 		public static void SetOutput(ILogWriter w)

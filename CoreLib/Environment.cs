@@ -198,14 +198,15 @@ namespace Dullahan
 			return argsList.ToArray ();
 		}
 
-		public static int InvokeCommand(string input)
+		public static int InvokeCommand(string input, out Exception error)
 		{
-			return InvokeCommand (ParseInput (input));
+			return InvokeCommand (ParseInput (input), out error);
 		}
 
-		public static int InvokeCommand(string[] args)
+		public static int InvokeCommand(string[] args, out Exception error)
 		{
 			int status = EXEC_FAILURE;
+			error = null;
 
 			//skip execution of no command was provided
 			if (args.Length < 1)
@@ -232,6 +233,7 @@ namespace Dullahan
 					Console.WriteLine(DEBUG_TAG + " Execution error: " + e.Message);
 #endif
 					status = EXEC_FAILURE;
+					error = e;
 				}
 			}
 			else

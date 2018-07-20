@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using UnityEngine;
 using System.Collections.Generic;
 using Dullahan.Env;
+using Dullahan.Logging;
 
 namespace Dullahan.Net
 {
@@ -12,7 +13,7 @@ namespace Dullahan.Net
 	/// Dullahan Head (CLI side).
 	/// </summary>
 	[AddComponentMenu("Dullahan/Server"), DisallowMultipleComponent]
-	public sealed class Server : MonoBehaviour
+	public sealed class Server : MonoBehaviour, ILogWriter
 	{
 		#region STATIC_VARS
 
@@ -94,8 +95,13 @@ namespace Dullahan.Net
 			pendingPackets = new Queue<SourcedPacket>();
 			sendBlacklist = new HashSet<Client>();
 
+			//setup environment
 			Environment.Init ();
-			Environment.CreateVariable("SERVER_PORT", new Env.ProxyVariable(delegate () { return port; }));
+			Environment.CreateVariable("SERVER_PORT", new ProxyVariable(delegate () { return port; }));
+
+			//setup logging
+			Log.SetOutput(this);
+
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
 		}
@@ -168,24 +174,27 @@ namespace Dullahan.Net
 			//check for pending received data
 			while(pendingPackets.Count > 0)
 			{
+				SourcedPacket sp;
 				lock (pendingPackets)
 				{
-					SourcedPacket sp = pendingPackets.Dequeue();
-					switch (sp.packet.type)
-					{
-						case Packet.DataType.command:
-							//run command and pass back success code
-							Packet responsePacket = new Packet(Packet.DataType.response);
-							if (sp.packet.data == "ping")
-								sp.packet.data += " " + sp.client.Name;
-							responsePacket.logResult = Environment.InvokeCommand(sp.packet.data);
-							sp.client.Send(responsePacket);
-							break;
+					sp = pendingPackets.Dequeue();
+				}
 
-						default:
-							//server only takes commands
-							break;
-					}
+				switch (sp.packet.type)
+				{
+					case Packet.DataType.command:
+						//run command and pass back success code
+						Packet responsePacket = new Packet(Packet.DataType.response);
+						Exception error;
+						responsePacket.logResult = Environment.InvokeCommand(sp.packet.data, out error);
+						if (error != null)
+							responsePacket.data = error.ToString();
+						sp.client.Send(responsePacket);
+						break;
+
+					default:
+						//server only takes commands
+						break;
 				}
 			}
 		}
@@ -221,16 +230,27 @@ namespace Dullahan.Net
 			{
 				lock (clients)
 				{
-					if (packet.type != Packet.DataType.management && !sendBlacklist.Contains(clients[i]))
+					if (packet.type != Packet.DataType.logentry || !sendBlacklist.Contains(clients[i]))
 						clients[i].Send(packet);
 				}
 			}
 		}
 		public void Send(Packet.DataType type, string data)
 		{
-			Send(new Packet(type, data));
+			Send(type, Log.DEFAULT_TAG, data);
+		}
+		public void Send(Packet.DataType type, string tag, string data)
+		{
+			Send(new Packet(type, tag, data));
 		}
 
+		void ILogWriter.Write(string tag, string msg)
+		{
+			Send(Packet.DataType.logentry, tag, msg);
+#if DEBUG
+			Debug.Log(TAG + " Sent [ tag: \"" + tag + "\" msg: \"" + msg + "\" ]");
+#endif
+		}
 		#endregion
 
 		#region INTERNAL_TYPES
@@ -310,9 +330,9 @@ namespace Dullahan.Net
 			string clientName = args[2];
 			for (int i = 0; i < instance.clients.Count; i++)
 			{
-				lock(instance.clients)
+				lock (instance.clients)
 				{
-					if(instance.clients[i].Name == clientName)
+					if (instance.clients[i].Name == clientName)
 					{
 						if (operation == "add")
 						{

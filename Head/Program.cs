@@ -142,8 +142,66 @@ namespace Dullahan
 
 				while (client.Connected)
 				{
+					Console.Write(client.Name + "> ");
 					string input = Console.ReadLine();
-					client.Send(new Packet(Packet.DataType.command, input));
+					int commandResult = Environment.EXEC_FAILURE;
+					string exceptionText = "";
+
+					//try to run the command locally first
+					string[] parsedInput = Environment.ParseInput(input);
+					Exception error;
+					commandResult = Environment.InvokeCommand(parsedInput, out error);
+					if (error != null)
+						exceptionText = error.ToString();
+
+					//didn't find command locally, send command to server
+					if (commandResult == Environment.EXEC_NOTFOUND)
+					{
+						client.SendAndRead(new Packet(Packet.DataType.command, input), delegate (Client c, Packet p) {
+							if (p.type == Packet.DataType.response)
+							{
+								commandResult = p.logResult;
+								exceptionText = p.data;
+							}
+#if DEBUG
+							else
+								Console.WriteLine(DEBUG_TAG + " Received a non-response packet while waiting " +
+									"for a response from \"" + input + "\"");
+#endif
+						});
+					}
+
+					//some failure occured
+					if(commandResult != 0)
+					{
+						Console.WriteLine("Status: " + commandResult);
+						switch (commandResult)
+						{
+							case Environment.EXEC_SKIP:
+								Console.ForegroundColor = ConsoleColor.Yellow;
+								Console.WriteLine("Command does not fulfill requirements; execution skipped");
+								Console.ResetColor();
+								break;
+
+							case Environment.EXEC_FAILURE:
+								Console.ForegroundColor = ConsoleColor.Red;
+								Console.WriteLine(exceptionText);
+								Console.ResetColor();
+								break;
+
+							case Environment.EXEC_NOTFOUND:
+								Console.ForegroundColor = ConsoleColor.Yellow;
+								Console.WriteLine("Command \"" + parsedInput[0] + "\" could not be found");
+								Console.ResetColor();
+								break;
+
+							default:
+								Console.ForegroundColor = ConsoleColor.Red;
+								Console.WriteLine("Unknown status");
+								Console.ResetColor();
+								break;
+						}
+					}
 				}
 			}
 			else if (mode == ExecutionMode.listen)
