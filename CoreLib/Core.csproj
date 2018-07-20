@@ -44,6 +44,7 @@
     <Compile Include="Env\IVariable.cs" />
     <Compile Include="Env\LiteralVariable.cs" />
     <Compile Include="Env\ProxyVariable.cs" />
+    <Compile Include="Logging\ILogWriter.cs" />
     <Compile Include="Logging\Log.cs" />
     <Compile Include="Net\Client.cs" />
     <Compile Include="Net\Packet.cs" />
