@@ -26,19 +26,37 @@ namespace Dullahan.Net
 		public string Name { get; set; }
 
 		private readonly object stateLock = new object();
+
+		/// <summary>
+		/// Connected to the remote host.
+		/// </summary>
 		public bool Connected { get; private set; }
+
+		/// <summary>
+		/// Receiving data from the remote host.
+		/// </summary>
 		public bool Reading { get; private set; }
+
+		/// <summary>
+		/// Sending data to the remote host.
+		/// </summary>
 		public bool Sending { get; private set; }
 
 		/// <summary>
-		/// The availability state of the Client. Returns true if no operations are underway.
+		/// Was connected and lost connection, or attempted connection failed.
+		/// </summary>
+		public bool Disconnected { get; private set; }
+
+		/// <summary>
+		/// The availability state of the Client. 
+		/// Returns true if connected and no operations are underway.
 		/// </summary>
 		public bool Idle
 		{
 			get
 			{
 				lock(stateLock)
-					return Connected && !Reading && !Sending;
+					return !Disconnected && Connected && !Reading && !Sending;
 			}
 		}
 
@@ -117,8 +135,21 @@ namespace Dullahan.Net
 
 		private void ConnectFinished(IAsyncResult res)
 		{
+			try
+			{
+				stream = client.GetStream ();
+			}
+			catch (InvalidOperationException)
+			{
+				//failed connection for some reason
+				Console.ForegroundColor = ConsoleColor.Red;
+				Console.WriteLine ("Could not connect to server at " + address.ToString() + ":" + port);
+				Console.ResetColor ();
+				Disconnected = true;
+				return;
+			}
+
 			//connection established
-			stream = client.GetStream();
 			Connected = true;
 		}
 
@@ -292,6 +323,7 @@ namespace Dullahan.Net
 			stream.Close();
 			client.Close();
 			Sending = Reading = Connected = false;
+			Disconnected = true;
 		}
 
 		public override int GetHashCode()

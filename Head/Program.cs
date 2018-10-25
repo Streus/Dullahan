@@ -130,7 +130,16 @@ namespace Dullahan
 			client.Start ();
 
 			//block for client to connect
-			while (!client.Connected) { }
+			while (!client.Connected)
+			{
+				if (client.Disconnected)
+				{
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.Error.WriteLine ("Exiting...");
+					Console.ResetColor ();
+					System.Environment.Exit (1);
+				}
+			}
 			Console.WriteLine ("\nConnected!");
 
 			//verify connection
