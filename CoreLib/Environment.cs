@@ -5,9 +5,10 @@ using Dullahan.Env;
 
 namespace Dullahan
 {
-    /// <summary>
-    /// Contains environment information and operations for Dullahan
-    /// </summary>
+	/// <summary>
+	/// Contains environment information and operations for Dullahan
+	/// </summary>
+	[CommandProvider]
     public class Environment
     {
 		#region TOKEN_CONSTANTS
@@ -66,8 +67,16 @@ namespace Dullahan
 			//assemble all methods marked as commands into a local collection
 			foreach(Assembly a in AppDomain.CurrentDomain.GetAssemblies ())
 			{
+				//skip assemblies that are not command providers
+				if (a.GetCustomAttributes (typeof (CommandProviderAttribute), false).Length <= 0)
+					continue;
+
 				foreach(Type t in a.GetTypes())
 				{
+					//skip types that are not command providers
+					if (t.GetCustomAttributes (typeof (CommandProviderAttribute), false).Length <= 0)
+						continue;
+
 					foreach (MethodInfo m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
 					{
 						CommandAttribute[] cAttrs = (CommandAttribute[])m.GetCustomAttributes(typeof(CommandAttribute), false);

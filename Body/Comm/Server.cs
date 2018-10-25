@@ -12,6 +12,7 @@ namespace Dullahan.Net
 	/// Handles communication between Dullhan Body (Unity side) and 
 	/// Dullahan Head (CLI side).
 	/// </summary>
+	[CommandProvider]
 	[AddComponentMenu("Dullahan/Server"), DisallowMultipleComponent]
 	public sealed class Server : MonoBehaviour, ILogWriter
 	{

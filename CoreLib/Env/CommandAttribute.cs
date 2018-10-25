@@ -2,6 +2,9 @@
 
 namespace Dullahan.Env
 {
+	/// <summary>
+	/// Tags methods as commands within a CommandProvider
+	/// </summary>
 	[AttributeUsage(AttributeTargets.Delegate | AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 	public class CommandAttribute : Attribute
 	{

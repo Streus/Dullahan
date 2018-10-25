@@ -41,6 +41,7 @@
   <ItemGroup>
     <Compile Include="Env\Command.cs" />
     <Compile Include="Env\CommandAttribute.cs" />
+    <Compile Include="Env\CommandProviderAttribute.cs" />
     <Compile Include="Env\IVariable.cs" />
     <Compile Include="Env\LiteralVariable.cs" />
     <Compile Include="Env\ProxyVariable.cs" />
