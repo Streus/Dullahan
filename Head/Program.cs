@@ -8,144 +8,48 @@ namespace Dullahan
 	{
 		#region ARG_FLAGS
 
-		private const string helpFlag = "-h";
-		private const string helpFlagLong = "--help";
+		private const string FLAG_HELP = "-h";
+		private const string FLAG_HELP_LONG = "--help";
 
-		private const string versionFlag = "-v";
-		private const string versionFlagLong = "--version";
+		private const string FLAG_VERSION = "-v";
+		private const string FLAG_VERSION_LONG = "--version";
 
-		private const string ipFlag = "--ip";
-		private const string portFlag = "-p";
-		private const string portFlagLong = "--port";
+		private const string FLAG_IP = "--ip";
+		private const string FLAG_PORT = "-p";
+		private const string FLAG_PORT_LONG = "--port";
 
-		private const string executionModeFlag = "-m";
-		private const string executionModeFlagLong = "--mode";
+		private const string FLAG_EXEC_MODE = "-m";
+		private const string FLAG_EXEC_MODE_LONG = "--mode";
 		#endregion
 
 		#region MISC_CONSTANTS
 
 		private const string DEBUG_TAG = "[PROG]";
-
-		private static volatile bool blocking = false;
 		#endregion
 
 		#region STATIC_VARS
 
+		private static volatile bool blocking = false;
+
 		private static Client client;
+
+		private static IPAddress addr;
+		private static int port;
+		private static ExecutionMode execMode;
 		#endregion
 
 		public static void Main(string[] args)
 		{
-			//default values
-			string ip = "127.0.0.1";
-			int port = Client.DEFAULT_PORT;
-			ExecutionMode mode = ExecutionMode.listen;
-
-			if (args.Length > 0)
-			{
-				int currArg = 0;
-
-				//misc special flags that must be first
-				//help flag
-				if (args[currArg] == helpFlag || args[currArg] == helpFlagLong)
-				{
-					//print help and exit
-					Console.WriteLine("help is todo");
-					System.Environment.Exit(0);
-				}
-				//version info flag
-				else if (args[currArg] == versionFlag || args[currArg] == versionFlagLong)
-				{
-					//print help and exit
-					Console.WriteLine("version is todo");
-					System.Environment.Exit(0);
-				}
-
-				//read args
-				while (currArg < args.Length)
-				{
-					//ip flag
-					if (args[currArg] == ipFlag)
-					{
-						ip = TryGetArg(args, ++currArg, ipFlag);
-					}
-					//port flag
-					else if (args[currArg] == portFlag || args[currArg] == portFlagLong)
-					{
-						string flag = args[currArg];
-						string pStr = TryGetArg(args, ++currArg, flag);
-						if (!int.TryParse(pStr, out port))
-						{
-							Console.ForegroundColor = ConsoleColor.Red;
-							Console.Error.WriteLine("\"" + pStr + "\" is not a valid port");
-							Console.ResetColor();
-							System.Environment.Exit(1);
-						}
-					}
-					//execution mode flag
-					else if (args[currArg] == executionModeFlag || args[currArg] == executionModeFlagLong)
-					{
-						string flag = args[currArg];
-						string mStr = TryGetArg(args, ++currArg, flag);
-						if (!Enum.TryParse<ExecutionMode>(mStr, out mode))
-						{
-							Console.ForegroundColor = ConsoleColor.Red;
-							Console.Error.WriteLine("\"" + mStr + "\" is not a valid mode");
-							Console.ResetColor();
-							System.Environment.Exit(1);
-						}
-					}
-					//unknown argument
-					else
-					{
-						Console.ForegroundColor = ConsoleColor.Red;
-						Console.Error.WriteLine("Unknown or unexpected argument \"" + args[currArg] + "\"");
-						Console.ResetColor();
-						System.Environment.Exit(1);
-					}
-
-					currArg++;
-				}
-			}
+			Initialize (args);
 
 			Environment.Init();
 
-			//start tcp client
-			client = null;
-			try
-			{
-				client = new Client (IPAddress.Parse (ip), port);
-			}
-			catch (FormatException)
-			{
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.Error.WriteLine ("\"" + ip + "\" is not a valid ip address.");
-				Console.ResetColor();
-				System.Environment.Exit (1);
-			}
-			if (mode == ExecutionMode.command)
-				client.dataRead += CommandReceiveResponse;
-			else if (mode == ExecutionMode.listen)
-				client.dataRead += ListenerReceiveResponse;
-			client.Start ();
-
-			//block for client to connect
-			while (!client.Connected)
-			{
-				if (client.Disconnected)
-				{
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Exiting...");
-					Console.ResetColor ();
-					System.Environment.Exit (1);
-				}
-			}
-			Console.WriteLine ("\nConnected!");
+			Connect ();
 
 			//verify connection
 			client.SendAndWait(new Packet(Packet.DataType.management, "setup"));
 
-			if (mode == ExecutionMode.command)
+			if (execMode == ExecutionMode.command)
 			{
 				client.SendAndWait(new Packet(Packet.DataType.command, "mute add " + client.Name));
 
@@ -187,37 +91,140 @@ namespace Dullahan
 						switch (commandResult)
 						{
 							case Environment.EXEC_SKIP:
-								Console.ForegroundColor = ConsoleColor.Yellow;
-								Console.WriteLine("Command does not fulfill requirements; execution skipped");
-								Console.ResetColor();
+								Write("Command does not fulfill requirements; execution skipped", ConsoleColor.Yellow);
 								break;
 
 							case Environment.EXEC_FAILURE:
-								Console.ForegroundColor = ConsoleColor.Red;
-								Console.WriteLine(exceptionText);
-								Console.ResetColor();
+								Write(exceptionText, ConsoleColor.DarkRed);
 								break;
 
 							case Environment.EXEC_NOTFOUND:
-								Console.ForegroundColor = ConsoleColor.Yellow;
-								Console.WriteLine("Command \"" + parsedInput[0] + "\" could not be found");
-								Console.ResetColor();
+								Write("Command \"" + parsedInput[0] + "\" could not be found", ConsoleColor.Yellow);
 								break;
 
 							default:
-								Console.ForegroundColor = ConsoleColor.Red;
-								Console.WriteLine("Unknown status");
-								Console.ResetColor();
+								Write("Unknown status", ConsoleColor.Red);
 								break;
 						}
 					}
 				}
 			}
-			else if (mode == ExecutionMode.listen)
+			else if (execMode == ExecutionMode.listen)
 			{
 				while (client.Connected) { }
 			}
 			
+		}
+
+		/// <summary>
+		/// Parse command line options
+		/// </summary>
+		/// <param name="args"></param>
+		private static void Initialize(string[] args)
+		{
+			//default values
+			string ip = "127.0.0.1";
+			IPAddress.TryParse (ip, out addr);
+			port = Client.DEFAULT_PORT;
+			execMode = ExecutionMode.listen;
+
+			if (args.Length <= 0)
+			{
+				return;
+			}
+
+			int currArg = 0;
+
+			//misc special flags that must be first
+			//help flag
+			if (args[currArg] == FLAG_HELP || args[currArg] == FLAG_HELP_LONG)
+			{
+				//print help and exit
+				Console.WriteLine("help is todo");
+				System.Environment.Exit(0);
+			}
+			//version info flag
+			else if (args[currArg] == FLAG_VERSION || args[currArg] == FLAG_VERSION_LONG)
+			{
+				//print help and exit
+				Console.WriteLine("version is todo");
+				System.Environment.Exit(0);
+			}
+
+			//read args
+			while (currArg < args.Length)
+			{
+				//ip flag
+				if (args[currArg] == FLAG_IP)
+				{
+					ip = TryGetArg(args, ++currArg, FLAG_IP);
+					try
+					{
+						addr = IPAddress.Parse (ip);
+					}
+					catch (FormatException)
+					{
+						Write("\"" + ip + "\" is not a valid ip address.", ConsoleColor.Red);
+						System.Environment.Exit (1);
+					}
+				}
+				//port flag
+				else if (args[currArg] == FLAG_PORT || args[currArg] == FLAG_PORT_LONG)
+				{
+					string flag = args[currArg];
+					string pStr = TryGetArg(args, ++currArg, flag);
+					if (!int.TryParse(pStr, out port))
+					{
+						Write("\"" + pStr + "\" is not a valid port", ConsoleColor.Red);
+						System.Environment.Exit(1);
+					}
+				}
+				//execution mode flag
+				else if (args[currArg] == FLAG_EXEC_MODE || args[currArg] == FLAG_EXEC_MODE_LONG)
+				{
+					string flag = args[currArg];
+					string mStr = TryGetArg(args, ++currArg, flag);
+					if (!Enum.TryParse<ExecutionMode>(mStr, out execMode))
+					{
+						Write("\"" + mStr + "\" is not a valid mode", ConsoleColor.Red);
+						System.Environment.Exit(1);
+					}
+				}
+				//unknown argument
+				else
+				{
+					Write("Unknown or unexpected argument \"" + args[currArg] + "\"", ConsoleColor.Red);
+					System.Environment.Exit(1);
+				}
+
+				currArg++;
+			}
+		}
+
+		/// <summary>
+		/// Attempt to connect to the remote host
+		/// </summary>
+		private static void Connect()
+		{
+			//start tcp client
+			client = new Client (addr, port); ;
+
+			if (execMode == ExecutionMode.command)
+				client.dataRead += CommandReceiveResponse;
+			else if (execMode == ExecutionMode.listen)
+				client.dataRead += ListenerReceiveResponse;
+			client.Start ();
+
+			//block for client to connect
+			while (!client.Connected)
+			{
+				if (client.Disconnected)
+				{
+					Write ("Exiting...", ConsoleColor.Red);
+					System.Environment.Exit (1);
+				}
+			}
+			Console.WriteLine ("\nConnected!");
 		}
 
 		private static void CommandReceiveResponse(Client endpoint, Packet packet)
@@ -255,21 +262,28 @@ namespace Dullahan
 
 				if (res.StartsWith ("-"))
 				{
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Provided \"" + argName + "\" flag, but no data");
-					Console.ResetColor ();
+					Write ("Provided \"" + argName + "\" flag, but no data", ConsoleColor.Red);
 					System.Environment.Exit (1);
 				}
 			}
 			catch (IndexOutOfRangeException)
 			{
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.Error.WriteLine ("Provided \"" + argName + "\" flag, but no data");
-				Console.ResetColor ();
+				Write ("Provided \"" + argName + "\" flag, but no data", ConsoleColor.Red);
 				System.Environment.Exit (1);
 			}
 
 			return res;
+		}
+
+		/// <summary>
+		/// Writes to the console with the indicated color
+		/// </summary>
+		/// <param name="error"></param>
+		private static void Write(string error, ConsoleColor color = ConsoleColor.White)
+		{
+			Console.ForegroundColor = ConsoleColor.Red;
+			Console.Error.WriteLine (error);
+			Console.ResetColor ();
 		}
 
 		#region INTERNAL_TYPES
