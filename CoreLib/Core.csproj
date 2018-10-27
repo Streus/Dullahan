@@ -48,11 +48,15 @@
     <Compile Include="Env\IVariable.cs" />
     <Compile Include="Env\LiteralVariable.cs" />
     <Compile Include="Env\ProxyVariable.cs" />
+    <Compile Include="Logging\Filter.cs" />
+    <Compile Include="Logging\ILogReader.cs" />
     <Compile Include="Logging\ILogWriter.cs" />
     <Compile Include="Logging\Log.cs" />
+    <Compile Include="Logging\Message.cs" />
     <Compile Include="Net\Client.cs" />
     <Compile Include="Net\Packet.cs" />
-    <Compile Include="Environment.cs" />
+    <Compile Include="Env\Executor.cs" />
+    <Compile Include="User.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup />

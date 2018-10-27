@@ -1,4 +1,4 @@
-﻿using System;
+﻿using Dullahan.Logging;
 using System.Runtime.Serialization;
 
 namespace Dullahan.Net
@@ -20,7 +20,7 @@ namespace Dullahan.Net
 		#region INSTANCE_VARS
 
 		public DataType type;
-		public string tag = Logging.Log.DEFAULT_TAG;
+		public string tag = Message.TAG_DEFAULT;
 		public string data = DEFAULT_DATA;
 		public int logResult = DEFAULT_LOG_RESULT;
 		#endregion
@@ -44,7 +44,7 @@ namespace Dullahan.Net
 		#region INSTANCE_METHODS
 
 		public Packet(DataType type) : this(type, DEFAULT_DATA) { }
-		public Packet(DataType type, string data) : this(type, Logging.Log.DEFAULT_TAG, data) { }
+		public Packet(DataType type, string data) : this(type, Message.TAG_DEFAULT, data) { }
 		public Packet(DataType type, string tag, string data)
 		{
 			this.type = type;

@@ -1,6 +1,7 @@
-﻿using System;
-using System.Net;
+﻿using Dullahan.Env;
 using Dullahan.Net;
+using System;
+using System.Net;
 
 namespace Dullahan
 {
@@ -31,6 +32,7 @@ namespace Dullahan
 
 		private static volatile bool blocking = false;
 
+		private static Executor env;
 		private static Client client;
 
 		private static IPAddress addr;
@@ -42,7 +44,8 @@ namespace Dullahan
 		{
 			Initialize (args);
 
-			Environment.Init();
+			Executor.Init();
+			env = Executor.Build ();
 
 			Connect ();
 
@@ -57,18 +60,18 @@ namespace Dullahan
 				{
 					Console.Write(client.Name + "> ");
 					string input = Console.ReadLine();
-					int commandResult = Environment.EXEC_FAILURE;
+					int commandResult = Executor.EXEC_FAILURE;
 					string exceptionText = "";
 
 					//try to run the command locally first
-					string[] parsedInput = Environment.ParseInput(input);
+					string[] parsedInput = env.ParseInput(input);
 					Exception error;
-					commandResult = Environment.InvokeCommand(parsedInput, out error);
+					commandResult = env.InvokeCommand(parsedInput, out error);
 					if (error != null)
 						exceptionText = error.ToString();
 
 					//didn't find command locally, send command to server
-					if (commandResult == Environment.EXEC_NOTFOUND)
+					if (commandResult == Executor.EXEC_NOTFOUND)
 					{
 						client.SendAndRead(new Packet(Packet.DataType.command, input), delegate (Client c, Packet p) {
 							if (p.type == Packet.DataType.response)
@@ -90,15 +93,15 @@ namespace Dullahan
 						Console.WriteLine("Status: " + commandResult);
 						switch (commandResult)
 						{
-							case Environment.EXEC_SKIP:
+							case Executor.EXEC_SKIP:
 								Write("Command does not fulfill requirements; execution skipped", ConsoleColor.Yellow);
 								break;
 
-							case Environment.EXEC_FAILURE:
+							case Executor.EXEC_FAILURE:
 								Write(exceptionText, ConsoleColor.DarkRed);
 								break;
 
-							case Environment.EXEC_NOTFOUND:
+							case Executor.EXEC_NOTFOUND:
 								Write("Command \"" + parsedInput[0] + "\" could not be found", ConsoleColor.Yellow);
 								break;
 
@@ -141,14 +144,14 @@ namespace Dullahan
 			{
 				//print help and exit
 				Console.WriteLine("help is todo");
-				System.Environment.Exit(0);
+				Environment.Exit(0);
 			}
 			//version info flag
 			else if (args[currArg] == FLAG_VERSION || args[currArg] == FLAG_VERSION_LONG)
 			{
 				//print help and exit
 				Console.WriteLine("version is todo");
-				System.Environment.Exit(0);
+				Environment.Exit(0);
 			}
 
 			//read args
@@ -165,7 +168,7 @@ namespace Dullahan
 					catch (FormatException)
 					{
 						Write("\"" + ip + "\" is not a valid ip address.", ConsoleColor.Red);
-						System.Environment.Exit (1);
+						Environment.Exit (1);
 					}
 				}
 				//port flag
@@ -176,7 +179,7 @@ namespace Dullahan
 					if (!int.TryParse(pStr, out port))
 					{
 						Write("\"" + pStr + "\" is not a valid port", ConsoleColor.Red);
-						System.Environment.Exit(1);
+						Environment.Exit(1);
 					}
 				}
 				//execution mode flag
@@ -187,14 +190,14 @@ namespace Dullahan
 					if (!Enum.TryParse<ExecutionMode>(mStr, out execMode))
 					{
 						Write("\"" + mStr + "\" is not a valid mode", ConsoleColor.Red);
-						System.Environment.Exit(1);
+						Environment.Exit(1);
 					}
 				}
 				//unknown argument
 				else
 				{
 					Write("Unknown or unexpected argument \"" + args[currArg] + "\"", ConsoleColor.Red);
-					System.Environment.Exit(1);
+					Environment.Exit(1);
 				}
 
 				currArg++;
@@ -221,7 +224,7 @@ namespace Dullahan
 				if (client.Disconnected)
 				{
 					Write ("Exiting...", ConsoleColor.Red);
-					System.Environment.Exit (1);
+					Environment.Exit (1);
 				}
 			}
 			Console.WriteLine ("\nConnected!");
@@ -263,13 +266,13 @@ namespace Dullahan
 				if (res.StartsWith ("-"))
 				{
 					Write ("Provided \"" + argName + "\" flag, but no data", ConsoleColor.Red);
-					System.Environment.Exit (1);
+					Environment.Exit (1);
 				}
 			}
 			catch (IndexOutOfRangeException)
 			{
 				Write ("Provided \"" + argName + "\" flag, but no data", ConsoleColor.Red);
-				System.Environment.Exit (1);
+				Environment.Exit (1);
 			}
 
 			return res;

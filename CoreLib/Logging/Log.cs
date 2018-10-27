@@ -2,133 +2,71 @@
 
 namespace Dullahan.Logging
 {
-	public static class Log
+	public class Log
 	{
-		#region COLOR_TAGS
-
-		public const string RED =		"<c=red>{0}</c>";
-		public const string ORANGE =	"<c=orn>{0}</c>";
-		public const string YELLOW =	"<c=ylw>{0}</c>";
-		public const string GREEN =		"<c=grn>{0}</c>";
-		public const string BLUE =		"<c=blu>{0}</c>";
-		public const string MAGENTA =	"<c=mag>{0}</c>";
-		#endregion
-
 		#region STATIC_VARS
 
-		public const string DEFAULT_TAG = "DEF";
-
-		private static ILogWriter writer;
-
-		public static FilterPolicy FilterMode { get; set; }
-		private static HashSet<string> tagFilter;
+		private const string TAG_TYPE_DEBUG = "DEBUG";
+		private const string TAG_TYPE_WARNING = "WARNING";
+		private const string TAG_TYPE_ERROR = "ERROR";
 		#endregion
 
-		#region STATIC_METHODS
+		#region INSTANCE_VARS
 
-		static Log()
-		{
-			tagFilter = new HashSet<string>();
-			FilterMode = FilterPolicy.exclusive;
-		}
+		private ILogWriter writer;
+		private ILogReader reader;
+		#endregion
 
-		public static void SetOutput(ILogWriter w)
+		#region INSTANCE_METHODS
+
+		public void SetOutput(ILogWriter w)
 		{
 			writer = w;
 		}
 
-		public static bool AddFilteredTag(string tag)
+		public void SetInput(ILogReader r)
 		{
-			return tagFilter.Add(tag);
+			reader = r;
 		}
 
-		public static bool RemoveFilteredTag(string tag)
+		private void WriteMessage(Message msg)
 		{
-			return tagFilter.Remove(tag);
-		}
-
-		/// <summary>
-		/// Returns true if the given tag is displayed under the current
-		/// filtering conditions, false otherwise
-		/// </summary>
-		public static bool IsTagDisplayed(string tag)
-		{
-			return FilterMode == FilterPolicy.exclusive && !tagFilter.Contains(tag) ||
-				FilterMode == FilterPolicy.inclusive && tagFilter.Contains(tag);
-		}
-
-		private static void WriteMessage(string tag, string msg)
-		{
-			if (tag == null || tag == "")
+			if (msg.Tags.Count <= 1)
 				throw new System.ArgumentException("Provided an empty tag");
 
-			if(IsTagDisplayed(tag))
-				writer.Write(tag.Substring(0, 3), msg);
-		}
-
-		/// <summary>
-		/// Write an error message to the logging system
-		/// </summary>
-		public static void E(string msg)
-		{
-			E(DEFAULT_TAG, msg);
+			writer.Write(msg);
 		}
 
 		/// <summary>
 		/// Write an error message to the logging system with a tag
 		/// </summary>
-		public static void E(string tag, string msg)
+		public void E(Message msg)
 		{
-			WriteMessage(tag, string.Format(RED, msg));
-		}
-
-		/// <summary>
-		/// Write a debug message to the logging system
-		/// </summary>
-		public static void D(string msg)
-		{
-			D(DEFAULT_TAG, msg);
+			msg.Tags.Add (TAG_TYPE_ERROR);
+			WriteMessage(msg);
 		}
 
 		/// <summary>
 		/// Write a debug message to the logging system with a tag
 		/// </summary>
-		public static void D(string tag, string msg)
+		public void D(Message msg)
 		{
-			WriteMessage(tag, msg);
-		}
-
-		/// <summary>
-		/// Write a warning message to the logging system
-		/// </summary>
-		public static void W(string msg)
-		{
-			W(DEFAULT_TAG, msg);
+			msg.Tags.Add (TAG_TYPE_DEBUG);
+			WriteMessage (msg);
 		}
 
 		/// <summary>
 		/// Write a warning message to the logging system with a tag
 		/// </summary>
-		public static void W(string tag, string msg)
+		public void W(Message msg)
 		{
-			WriteMessage(tag, string.Format(YELLOW, msg));
+			msg.Tags.Add (TAG_TYPE_WARNING);
+			WriteMessage (msg);
 		}
 		#endregion
 
 		#region INTERNAL_TYPES
 
-		public enum FilterPolicy
-		{
-			/// <summary>
-			/// Only tags in the filter will be displayed
-			/// </summary>
-			inclusive,
-
-			/// <summary>
-			/// Only tags not in the filter will be displayed
-			/// </summary>
-			exclusive
-		}
 		#endregion
 	}
 }
