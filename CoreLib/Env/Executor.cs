@@ -1,15 +1,16 @@
-﻿using System;
+﻿using Dullahan.Logging;
+
+using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Dullahan.Env;
 
-namespace Dullahan
+namespace Dullahan.Env
 {
 	/// <summary>
 	/// Contains environment information and operations for Dullahan
 	/// </summary>
 	[CommandProvider]
-    public class Environment
+    public sealed class Executor
     {
 		#region TOKEN_CONSTANTS
 
@@ -29,14 +30,14 @@ namespace Dullahan
 		/// </summary>
 		public const int EXEC_SUCCESS = 0, EXEC_SKIP = 1, EXEC_FAILURE = 2, EXEC_NOTFOUND = 3;
 
-		private static Environment instance;
+		private static Executor globalEnv;
 
 		#endregion
 
 		#region INSTANCE_VARS
 
 		/// <summary>
-		/// Collection of all commands in the project.
+		/// Collection of all commands available to this executor
 		/// </summary>
 		private Dictionary<string, Command> commands;
 
@@ -45,21 +46,25 @@ namespace Dullahan
 		/// </summary>
 		private Dictionary<string, IVariable> variables;
 
+		private Log logger;
+
 		#endregion
 
 		#region STATIC_METHODS
 
-		public static Environment GetInstance()
+		public static Executor GetGlobal()
 		{
-			if (instance == null)
-				instance = new Environment();
-			return instance;
+			if (globalEnv == null)
+				globalEnv = new Executor();
+			return globalEnv;
 		}
 
+		/// <summary>
+		/// Initializes the global execution environmment
+		/// </summary>
 		public static void Init()
 		{
-			GetInstance();
-
+			globalEnv = Build ();
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Initializing");
 #endif
@@ -108,11 +113,11 @@ namespace Dullahan
 						com.helpText = cAttrs[0].Help;
 
 						//default Dullahan commands get precidence
-						if (instance.commands.ContainsKey (com.invocation))
+						if (globalEnv.commands.ContainsKey (com.invocation))
 						{
 							//overwrite user command with Dullahan command
-							if (t.Assembly == typeof(Environment).Assembly)
-								instance.commands.Remove (com.invocation);
+							if (t.Assembly == typeof(Executor).Assembly)
+								globalEnv.commands.Remove (com.invocation);
 							//notify that command was not added
 							else
 							{
@@ -124,35 +129,57 @@ namespace Dullahan
 						}
 
 						//add valid command to collection
-						instance.commands.Add(cAttrs[0].Invocation, com);
+						globalEnv.commands.Add(cAttrs[0].Invocation, com);
 #if DEBUG
 						Console.WriteLine(DEBUG_TAG + " Added \"" + com.invocation + "\" to command list.");
 #endif
 					}
 				}
 			}
+		}
 
-			//set up default variables
-			//TODO default vars?
+		public static Executor Build()
+		{
+			return new Executor ();
+		}
+        #endregion
+
+        #region INSTANCE_METHODS
+
+		private Executor()
+		{
+			commands = new Dictionary<string, Command>();
+			variables = new Dictionary<string, IVariable>();
+
+			logger = new Log ();
+		}
+
+		~Executor()
+		{
+#if DEBUG
+			Console.WriteLine(DEBUG_TAG + " Environment completely cleared");
+#endif
 		}
 
 		/// <summary>
 		/// Uninitializes Environment, removing all commands and variables from memory
 		/// </summary>
-		public static void Clear()
+		public void Clear()
 		{
-			if (instance == null)
-				return;
-
-			instance.commands.Clear();
-			instance.variables.Clear();
-
-			instance = null;
+			commands.Clear ();
+			variables.Clear ();
 		}
 
-		public static bool HasCommand(string invocation)
+		/// <summary>
+		/// Returns true if either this executor has the indicated command, or if the
+		/// global executor does.
+		/// </summary>
+		/// <param name="invocation"></param>
+		/// <returns></returns>
+		public bool HasCommand(string invocation)
 		{
-			return GetInstance().commands.ContainsKey(invocation);
+			return commands.ContainsKey (invocation) 
+				|| GetGlobal ().commands.ContainsKey (invocation); ;
 		}
 
 		/// <summary>
@@ -160,7 +187,7 @@ namespace Dullahan
 		/// </summary>
 		/// <param name="raw">The raw input</param>
 		/// <returns></returns>
-		public static string[] ParseInput(string raw)
+		public string[] ParseInput(string raw)
 		{
 			List<string> argsList = new List<string> ();
 			string mergeString = "";
@@ -183,9 +210,15 @@ namespace Dullahan
 					int end = raw.IndexOf (VAR_MARKER, start);
 					if (end != -1)
 					{
-						object var = GetVariable<object>(raw.Substring(start, end - start));
-						if(var != null)
-							mergeString += var.ToString();
+						string name = raw.Substring (start, end - start);
+
+						//check local and global executors
+						object var = GetVariable<object> (name);
+						if (var == null)
+							var = GetGlobal ().GetVariable<object> (name);
+
+						if (var != null)
+							mergeString += var.ToString ();
 						i = end;
 					}
 				}
@@ -207,12 +240,12 @@ namespace Dullahan
 			return argsList.ToArray ();
 		}
 
-		public static int InvokeCommand(string input, out Exception error)
+		public int InvokeCommand(string rawInput, out Exception error)
 		{
-			return InvokeCommand (ParseInput (input), out error);
+			return InvokeCommand (ParseInput (rawInput), out error);
 		}
 
-		public static int InvokeCommand(string[] args, out Exception error)
+		public int InvokeCommand(string[] args, out Exception error)
 		{
 			int status = EXEC_FAILURE;
 			error = null;
@@ -226,7 +259,8 @@ namespace Dullahan
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Received invoke request: " + invocation);
 #endif
-			if (GetInstance().commands.TryGetValue (invocation, out c))
+			if (commands.TryGetValue (invocation, out c) 
+				|| GetGlobal ().commands.TryGetValue (invocation, out c))
 			{
 				//found command, try executing
 				try
@@ -234,12 +268,12 @@ namespace Dullahan
 #if DEBUG
 					Console.WriteLine (DEBUG_TAG + " Executing " + invocation);
 #endif
-					status = c.function.Invoke (args);
+					status = c.function.Invoke (args, ref logger);
 				}
 				catch (Exception e)
 				{
 #if DEBUG
-					Console.WriteLine(DEBUG_TAG + " Execution error: " + e.Message);
+					Console.WriteLine (DEBUG_TAG + " Execution error: " + e.Message);
 #endif
 					status = EXEC_FAILURE;
 					error = e;
@@ -248,7 +282,7 @@ namespace Dullahan
 			else
 			{
 #if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Cound not find \"" + args[0] + "\"");
+				Console.WriteLine (DEBUG_TAG + " Cound not find \"" + args[0] + "\"");
 #endif
 				status = EXEC_NOTFOUND;
 			}
@@ -262,14 +296,14 @@ namespace Dullahan
 		/// <typeparam name="T"></typeparam>
 		/// <param name="name"></param>
 		/// <returns></returns>
-		public static T GetVariable<T>(string name)
+		public T GetVariable<T>(string name)
 		{
 			IVariable var;
-			if(GetInstance().variables.TryGetValue(name, out var))
+			if (variables.TryGetValue (name, out var))
 			{
-				return var.GetValue<T>();
+				return var.GetValue<T> ();
 			}
-			return default(T);
+			return default (T);
 		}
 
 		/// <summary>
@@ -279,22 +313,19 @@ namespace Dullahan
 		/// </summary>
 		/// <param name="name"></param>
 		/// <param name="value"></param>
-		public static void SetVariable(string name, object value)
+		public void SetVariable(string name, object value)
 		{
 			IVariable var;
-			if(GetInstance().variables.TryGetValue(name, out var))
+			if (variables.TryGetValue (name, out var))
 			{
-				var.SetValue(value);
+				var.SetValue (value);
 #if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Set \"" + name + "\" to " + value.ToString());
+				Console.WriteLine (DEBUG_TAG + " Set \"" + name + "\" to " + value.ToString ());
 #endif
 			}
 			else
 			{
-				GetInstance().variables.Add(name, new LiteralVariable(value));
-#if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Created new variable named \"" + name + "\" with value \"" + value.ToString() + "\"");
-#endif
+				CreateVariable (name, new LiteralVariable (value));
 			}
 		}
 
@@ -304,35 +335,44 @@ namespace Dullahan
 		/// </summary>
 		/// <param name="name"></param>
 		/// <param name="var"></param>
-		public static void CreateVariable(string name, IVariable var)
+		public void CreateVariable(string name, IVariable var)
 		{
-			if (GetInstance().variables.ContainsKey(name))
-				throw new ArgumentException("Variable with the name " + name + " already exists");
-
-			GetInstance().variables.Add(name, var);
+			variables.Add (name, var);
 #if DEBUG
-			Console.WriteLine(DEBUG_TAG + " Created new variable named \"" + name + "\" with value \"" + var.GetValue<object>().ToString() + "\"");
+			Console.WriteLine (DEBUG_TAG + " Created new variable named \"" + name + "\" with value \"" + var.GetValue<object> ().ToString () + "\"");
 #endif
 		}
-        #endregion
 
-        #region INSTANCE_METHODS
-
-		private Environment()
+		/// <summary>
+		/// Checks if a variable with the given name exists in this executor
+		/// </summary>
+		/// <param name="name"></param>
+		/// <returns></returns>
+		public bool HasVariable(string name)
 		{
-			commands = new Dictionary<string, Command>();
-			variables = new Dictionary<string, IVariable>();
+			return variables.ContainsKey (name);
 		}
 
-		~Environment()
+		/// <summary>
+		/// Commands executed by this executor will write to here
+		/// </summary>
+		/// <param name="writer"></param>
+		public void SetOutput(ILogWriter writer)
 		{
-#if DEBUG
-			Console.WriteLine(DEBUG_TAG + " Environment completely cleared");
-#endif
+			logger.SetOutput (writer);
 		}
-        #endregion
 
-        #region INTERNAL_TYPES
+		/// <summary>
+		/// A source for input for commands executed by this executor
+		/// </summary>
+		/// <param name="reader"></param>
+		public void SetInput(ILogReader reader)
+		{
+			logger.SetInput (reader);
+		}
+		#endregion
+
+		#region INTERNAL_TYPES
 
 		#endregion
 

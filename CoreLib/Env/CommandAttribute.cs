@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Dullahan.Logging;
+using System;
 
 namespace Dullahan.Env
 {
@@ -18,5 +19,5 @@ namespace Dullahan.Env
 	/// </summary>
 	/// <param name="args"></param>
 	/// <returns></returns>
-	public delegate int CommandDelegate(string[] args); 
+	public delegate int CommandDelegate(string[] args, ref Log log); 
 }

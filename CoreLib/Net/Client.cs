@@ -76,6 +76,8 @@ namespace Dullahan.Net
 		/// Data received
 		/// </summary>
 		private List<byte> storedData;
+
+		
 		#endregion
 
 		#region STATIC_METHODS
@@ -89,7 +91,7 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="address">The address to which connection wiil be attempted</param>
 		/// <param name="port">The port, what else?</param>
-		public Client(IPAddress address, int port = DEFAULT_PORT)
+		public Client(IPAddress address, int port = DEFAULT_PORT) : this()
 		{
 			this.address = address;
 			this.port = port;
@@ -98,15 +100,13 @@ namespace Dullahan.Net
 
 			client = new TcpClient();
 			stream = null;
-
-			storedData = new List<byte>();
 		}
 
 		/// <summary>
 		/// Create a new Client objct with an existing and connected TcpClient
 		/// </summary>
 		/// <param name="existingClient"></param>
-		public Client(TcpClient existingClient)
+		public Client(TcpClient existingClient) : this()
 		{
 			client = existingClient;
 			stream = client.GetStream();
@@ -116,8 +116,11 @@ namespace Dullahan.Net
 
 			address = null;
 			port = -1;
+		}
 
-			storedData = new List<byte>();
+		private Client()
+		{
+			storedData = new List<byte> ();
 		}
 
 		/// <summary>
@@ -233,7 +236,7 @@ namespace Dullahan.Net
 
 		private void HandleManagementPacket(Packet packet)
 		{
-			string[] data = Environment.ParseInput(packet.data);
+			string[] data = packet.data.Split (' ');
 
 			try
 			{
