@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using Dullahan.Env;
 using Dullahan.Logging;
 
+[assembly: CommandProvider]
+
 namespace Dullahan.Net
 {
 	/// <summary>
