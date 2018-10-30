@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Dullahan.Logging;
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -10,7 +12,7 @@ namespace Dullahan.Net
 	/// <summary>
 	/// Manages the connection to a Dullahan server/client
 	/// </summary>
-	public class Client
+	public class Client : ILogWriter, ILogReader
 	{
 		#region STATIC_VARS
 
@@ -338,6 +340,20 @@ namespace Dullahan.Net
 		{
 			return Name.Equals(((Client)obj).Name);
 		}
+
+		#region INTERFACE_METHODS
+		public void Write(Message msg)
+		{
+			//TODO send the message to the remote host
+			throw new NotImplementedException ();
+		}
+
+		public string ReadLine()
+		{
+			//TODO signal to the remote host that input is expected
+			throw new NotImplementedException ();
+		}
+		#endregion
 		#endregion
 
 		#region INTERNAL_TYPES
