@@ -1,11 +1,12 @@
 ﻿using Dullahan.Env;
+using Dullahan.Logging;
 using Dullahan.Net;
 using System;
 using System.Net;
 
 namespace Dullahan
 {
-	public class Program
+	internal class Program : ILogWriter, ILogReader
 	{
 		#region ARG_FLAGS
 
@@ -46,6 +47,8 @@ namespace Dullahan
 
 			Executor.Init();
 			env = Executor.Build ();
+			env.SetOutput (this); //TODO executor redirect class
+			env.SetInput (this);
 
 			Connect ();
 
@@ -287,6 +290,18 @@ namespace Dullahan
 			Console.ForegroundColor = ConsoleColor.Red;
 			Console.Error.WriteLine (error);
 			Console.ResetColor ();
+		}
+
+		public void Write(Message msg)
+		{
+			//TODO write to console
+			throw new NotImplementedException ();
+		}
+
+		public string ReadLine()
+		{
+			//TODO read from console
+			throw new NotImplementedException ();
 		}
 
 		#region INTERNAL_TYPES
