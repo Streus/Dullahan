@@ -1,5 +1,5 @@
 ﻿using Dullahan.Env;
-using Dullahan.Logging;
+using Dullahan.Net;
 using System;
 using System.IO;
 using System.Runtime.Serialization;
@@ -7,14 +7,19 @@ using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Dullahan
 {
+	/// <summary>
+	/// 
+	/// </summary>
 	[Serializable]
 	public class User : ISerializable
 	{
 		#region STATIC_VARS
 
+		private const string TAG = "[USER]";
+
 		private const string USER_FILE_EXT = "user";
 
-		public static string UserRegistryPath { get; set; } = ".";
+		public static string RegistryPath { get; set; } = ".";
 		#endregion
 
 		#region INSTANCE_VARS
@@ -26,7 +31,9 @@ namespace Dullahan
 
 		public Permission permissions { get; set; }
 
-		public Executor Environment { get; private set; }
+		public Executor Environment { get; private set; } //TODO serialize variables?
+
+		public Endpoint Host { get; set; }
 		#endregion
 
 		#region STATIC_METHODS
@@ -39,22 +46,33 @@ namespace Dullahan
 		/// <returns></returns>
 		public static User Load(string name)
 		{
+			if (!Directory.Exists (RegistryPath))
+			{
+				Directory.CreateDirectory (RegistryPath);
+			}
+
 			FileStream userFile;
 			try
 			{
-				userFile = File.OpenRead (UserRegistryPath + Path.DirectorySeparatorChar + name + "." + USER_FILE_EXT);
+				userFile = File.OpenRead (RegistryPath + Path.DirectorySeparatorChar + name + "." + USER_FILE_EXT);
 			}
-			catch (FileNotFoundException)
+			catch (IOException)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Failed to find user file in \"" + UserRegistryPath + "\"");
+				Console.Error.WriteLine (TAG + " Failed to find user file in \"" + RegistryPath + "\"");
 #endif
-				return null;
+				return new User () {
+					Name = "user",
+					Environment = Executor.Build ("user")
+				};
 			}
 
 			BinaryFormatter formatter = new BinaryFormatter ();
 			User u = (User)formatter.Deserialize (userFile);
 			userFile.Close ();
+
+			//HACK temporarily make an env for users
+			u.Environment = Executor.Build (u.Name);
 
 			return u;
 		}
@@ -67,12 +85,12 @@ namespace Dullahan
 			FileStream userFile;
 			try
 			{
-				userFile = File.OpenWrite (UserRegistryPath + Path.DirectorySeparatorChar + u.Name + "." + USER_FILE_EXT);
+				userFile = File.OpenWrite (RegistryPath + Path.DirectorySeparatorChar + u.Name + "." + USER_FILE_EXT);
 			}
 			catch (FileNotFoundException)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Failed to find user file in \"" + UserRegistryPath + "\"");
+				Console.Error.WriteLine (TAG + " Failed to find user file in \"" + RegistryPath + "\"");
 #endif
 				return;
 			}
@@ -109,6 +127,7 @@ namespace Dullahan
 			info.AddValue ("psswd", password);
 			info.AddValue ("psswdprot", passwordProtected);
 			info.AddValue ("permis", permissions);
+			//TODO user environment serialization
 		}
 		#endregion
 

@@ -16,19 +16,11 @@ namespace Dullahan.Net
 	/// </summary>
 	[CommandProvider]
 	[AddComponentMenu("Dullahan/Server"), DisallowMultipleComponent]
-	public sealed class Server : MonoBehaviour, ILogWriter
+	public sealed class Server : MonoBehaviour
 	{
 		#region STATIC_VARS
 
-		// The default IP the server will run on
-		public const string DEFAULT_IP = "127.0.0.1";
-
-		// Marks the end of packets
-		public const string EOF = "\0";
-
-		private const string TAG = "[DUL]";
-
-		private const int CDB_LENGTH = 1024;
+		private const string TAG = "[DULSRV]";
 
 		private static Server instance;
 		#endregion
@@ -41,12 +33,10 @@ namespace Dullahan.Net
 		private bool running;
 
 		[SerializeField]
-		private int port = Client.DEFAULT_PORT;
+		private int port = Endpoint.DEFAULT_PORT;
 
 		private TcpListener server;
-		private List<Client> clients;
-		private Dictionary<string, Filter> filters;
-		private Filter activeFilter;
+		private List<User> users;
 
 		/// <summary>
 		/// Recieved packets that have not been read on the main thread yet
@@ -93,16 +83,16 @@ namespace Dullahan.Net
 #endif
 
 			server = null;
-			clients = new List<Client>();
+			users = new List<User>();
 			pendingPackets = new Queue<SourcedPacket>();
 
 			//setup environment
-			Environment.Init ();
+			Executor.Init ();
 
-			//setup logging
-			Log.SetOutput(this);
-			filters = new Dictionary<string, Filter> ();
-			activeFilter = null;
+			//set user directory
+			User.RegistryPath = Application.streamingAssetsPath;
+
+			Log.IncludeContext = true; //TODO remove
 
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
@@ -110,7 +100,14 @@ namespace Dullahan.Net
 
 		public void OnDestroy()
 		{
-			Disconnect (null);
+			running = false;
+			for (int i = 0; i < instance.users.Count; i++)
+			{
+				users[i].Host.Disconnect ();
+			}
+
+			server.Stop ();
+			server = null;
 		}
 
 		/// <summary>
@@ -127,53 +124,54 @@ namespace Dullahan.Net
 		/// </summary>
 		public void Run()
 		{
-			IPAddress ip = IPAddress.Parse(DEFAULT_IP);
-			server = new TcpListener (ip, port);
+			server = new TcpListener (IPAddress.Any, port);
 
 			server.Start();
 			running = true;
 
-			server.BeginAcceptTcpClient (ClientAcceptCallback, null);
+			server.BeginAcceptTcpClient (EndpointAcceptCallback, server);
+#if DEBUG
+			Debug.Log (TAG + " Server started; waiting for connections");
+#endif
 		}
 
 		/// <summary>
-		/// Loops waiting for incoming connections, adding a new Client when one is found
+		/// Loops waiting for incoming connections, adding a new Endpoint when one is found
 		/// </summary>
 		/// <param name="res"></param>
-		private void ClientAcceptCallback(IAsyncResult res)
+		private void EndpointAcceptCallback(IAsyncResult res)
 		{
-			Client c = new Client(server.EndAcceptTcpClient(res));
-			c.Name = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-			filters.Add (c.Name, new Filter (Filter.Policy.exclusive));
-			c.dataRead += DataReceived;
-			c.Read();
-			lock (clients)
+			try
 			{
-				clients.Add(c);
-			}
+				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
+				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
+				c.dataRead += DataReceived;
+				c.Flow = Endpoint.FlowState.bidirectional;
+				c.ReadAsync ();
+
+				User u = User.Load ("User");
+				u.Host = c;
+				u.Environment.SetOutput (c);
+				User.Store (u);
+				users.Add (u);
 #if DEBUG
-			Debug.Log(TAG + " Added new client.\nName: " + c.Name);
+				Debug.Log (TAG + " Added new client.\nName: " + c.Name + "\nHost: " + c.ToString () + "\nEnv: " + u.Environment.ToString ());
 #endif
-			server.BeginAcceptTcpClient(ClientAcceptCallback, null);
+			}
+			catch (Exception e)
+			{
+#if DEBUG
+				Debug.LogException (e);
+#endif
+			}
+			finally
+			{
+				server.BeginAcceptTcpClient (EndpointAcceptCallback, server);
+			}
 		}
 
 		public void Update()
 		{
-			//find idle clients and start reading from them
-			for(int i = 0; i < clients.Count; i++)
-			{
-				if (clients[i].Idle)
-				{
-#if DEBUG
-					Debug.Log(TAG + " Client " + clients[i].Name + " is idle. Starting read...");
-#endif
-					lock (clients)
-					{
-						clients[i].Read();
-					}
-				}
-			}
-
 			//check for pending received data
 			while(pendingPackets.Count > 0)
 			{
@@ -183,22 +181,14 @@ namespace Dullahan.Net
 					sp = pendingPackets.Dequeue();
 				}
 
-				switch (sp.packet.type)
+				switch (sp.packet.Type)
 				{
 					case Packet.DataType.command:
-					//set filter
-					filters.TryGetValue (sp.client.Name, out activeFilter);
 
 					//run command and pass back success code
-					Packet responsePacket = new Packet(Packet.DataType.response);
-					Exception error;
-					responsePacket.logResult = Environment.InvokeCommand(sp.packet.data, out error);
-					if (error != null)
-						responsePacket.data = error.ToString();
-					sp.client.Send(responsePacket);
-
-					//reset filter
-					activeFilter = null;
+					Message m = new Message (sp.user.Environment.InvokeCommand (sp.packet.Data).ToString ());
+					Packet responsePacket = new Packet (Packet.DataType.response, m);
+					sp.user.Host.Send(responsePacket); //TODO async brok?
 					break;
 
 					default:
@@ -212,18 +202,30 @@ namespace Dullahan.Net
 		/// Received data from a client.
 		/// </summary>
 		/// <param name="packet"></param>
-		private void DataReceived(Client source, Packet packet)
+		private void DataReceived(Endpoint source, Packet packet)
 		{
 #if DEBUG
 			Debug.Log(TAG + " Received packet.\n" + packet.ToString());
 #endif
 			SourcedPacket sp = new SourcedPacket();
-			sp.client = source;
+
+			foreach (User u in users)
+			{
+				if (u.Host.Equals(source))
+				{
+					sp.user = u;
+					break;
+				}
+			}
+
 			sp.packet = packet;
+
 			lock (pendingPackets)
 			{
 				pendingPackets.Enqueue(sp);
 			}
+
+			source.ReadAsync ();
 		}
 
 		/// <summary>
@@ -235,33 +237,20 @@ namespace Dullahan.Net
 #if DEBUG
 			Debug.Log(TAG + " Sending packet.\n" + packet.ToString());
 #endif
-			for(int i = 0; i < clients.Count; i++)
+			for(int i = 0; i < users.Count; i++)
 			{
-				lock (clients)
-				{
-					clients[i].Send(packet);
-				}
+				users[i].Host.SendAsync(packet);
 			}
 		}
 		public void Send(Packet.DataType type, string data)
 		{
-			Send(type, Log.DEFAULT_TAG, data);
+			Send(type, Message.TAG_DEFAULT, data);
 		}
 		public void Send(Packet.DataType type, string tag, string data)
 		{
 			Send(new Packet(type, tag, data));
 		}
 
-		void ILogWriter.Write(string tag, string msg)
-		{
-			if (activeFilter != null && activeFilter.IsTagDisplayed (tag))
-			{
-				Send (Packet.DataType.logentry, tag, msg);
-#if DEBUG
-				Debug.Log (TAG + " Sent [ tag: \"" + tag + "\" msg: \"" + msg + "\" ]");
-#endif
-			}
-		}
 		#endregion
 
 		#region INTERNAL_TYPES
@@ -272,7 +261,7 @@ namespace Dullahan.Net
 		private struct SourcedPacket
 		{
 			public Packet packet;
-			public Client client;
+			public User user;
 		}
 		#endregion
 
@@ -283,14 +272,14 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="args"></param>
 		/// <returns></returns>
-		[Command (Invocation = "ping", HelpFile = "res:ping")]
-		private static int Handshake(string[] args)
+		[Command (Invocation = "echo")]
+		private static int Handshake(string[] args, Executor env)
 		{
 			if (args.Length < 2)
-				return Environment.EXEC_FAILURE;
+				return Executor.EXEC_FAILURE;
 
-			instance.Send (Packet.DataType.response, args[1]);
-			return Environment.EXEC_SUCCESS;
+			env.Out.D ("SERVER", "Message was \"" + args[1] + "\"");
+			return Executor.EXEC_SUCCESS;
 		}
 
 		/// <summary>
@@ -298,17 +287,17 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="args"></param>
 		/// <returns></returns>
-		[Command(Invocation = "logout-all", HelpFile = "res:logout")]
-		private static int Disconnect(string[] args)
+		[Command(Invocation = "logout-all")]
+		private static int Disconnect(string[] args, Executor env)
 		{
 			if (instance != null)
 			{
 				try
 				{
 					instance.running = false;
-					for(int i = 0; i < instance.clients.Count; i++)
+					for(int i = 0; i < instance.users.Count; i++)
 					{
-						instance.clients[i].Disconnect();
+						instance.users[i].Host.Disconnect();
 					}
 
 					instance.server.Stop ();
@@ -318,17 +307,17 @@ namespace Dullahan.Net
 				{
 					//something went wrong
 					Debug.LogException (e);
-					return Environment.EXEC_FAILURE;
+					return Executor.EXEC_FAILURE;
 				}
 
 				//successfully disconnected
-				return Environment.EXEC_SUCCESS;
+				return Executor.EXEC_SUCCESS;
 			}
 
 			//nothing to disconnect from, strangely enough
 			//wait, how did the server get this?
 			//i'm gonna stop asking questions
-			return Environment.EXEC_SKIP;
+			return Executor.EXEC_SKIP;
 		}
 		#endregion
 	}

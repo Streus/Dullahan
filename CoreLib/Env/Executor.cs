@@ -22,7 +22,7 @@ namespace Dullahan.Env
 		#region STATIC_VARS
 
 #if DEBUG
-		private const string DEBUG_TAG = "[DULENV]";
+		private const string DEBUG_TAG = "[DULEXE]";
 #endif
 
 		/// <summary>
@@ -36,6 +36,8 @@ namespace Dullahan.Env
 
 		#region INSTANCE_VARS
 
+		public string Name { get; private set; }
+
 		/// <summary>
 		/// Collection of all commands available to this executor
 		/// </summary>
@@ -46,7 +48,7 @@ namespace Dullahan.Env
 		/// </summary>
 		private Dictionary<string, IVariable> variables;
 
-		private Log logger;
+		public Log Out { get; private set; }
 
 		#endregion
 
@@ -64,7 +66,7 @@ namespace Dullahan.Env
 		/// </summary>
 		public static void Init()
 		{
-			globalEnv = Build ();
+			globalEnv = Build ("global");
 #if DEBUG
 			Console.WriteLine (DEBUG_TAG + " Initializing");
 #endif
@@ -94,8 +96,8 @@ namespace Dullahan.Env
 						CommandDelegate c = (CommandDelegate)Delegate.CreateDelegate(typeof(CommandDelegate), m, false);
 						if (c == null)
 						{
-							Console.Error.WriteLine(m.Name + " is marked as a Dullahan Command, but it does not match "
-								+ "the required method signature: int name(string[]) .");
+							Console.Error.WriteLine(m.ReflectedType + "." + m.Name + " is marked as a Dullahan Command, but it does not match "
+								+ "the required method signature: int name(string[], Executor)");
 							continue;
 						}
 
@@ -138,9 +140,9 @@ namespace Dullahan.Env
 			}
 		}
 
-		public static Executor Build()
+		public static Executor Build(string name)
 		{
-			return new Executor ();
+			return new Executor () { Name = name };
 		}
         #endregion
 
@@ -151,7 +153,7 @@ namespace Dullahan.Env
 			commands = new Dictionary<string, Command>();
 			variables = new Dictionary<string, IVariable>();
 
-			logger = new Log ();
+			Out = new Log ();
 		}
 
 		~Executor()
@@ -240,15 +242,14 @@ namespace Dullahan.Env
 			return argsList.ToArray ();
 		}
 
-		public int InvokeCommand(string rawInput, out Exception error)
+		public int InvokeCommand(string rawInput)
 		{
-			return InvokeCommand (ParseInput (rawInput), out error);
+			return InvokeCommand (ParseInput (rawInput));
 		}
 
-		public int InvokeCommand(string[] args, out Exception error)
+		public int InvokeCommand(string[] args)
 		{
 			int status = EXEC_FAILURE;
-			error = null;
 
 			//skip execution of no command was provided
 			if (args.Length < 1)
@@ -268,15 +269,15 @@ namespace Dullahan.Env
 #if DEBUG
 					Console.WriteLine (DEBUG_TAG + " Executing " + invocation);
 #endif
-					status = c.function.Invoke (args, ref logger);
+					status = c.function.Invoke (args, this);
 				}
 				catch (Exception e)
 				{
 #if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Execution error: " + e.Message);
+					Console.Error.WriteLine (DEBUG_TAG + " Execution error: " + e.Message);
 #endif
 					status = EXEC_FAILURE;
-					error = e;
+					Out.E (new Message (e.ToString ()));
 				}
 			}
 			else
@@ -359,7 +360,7 @@ namespace Dullahan.Env
 		/// <param name="writer"></param>
 		public void SetOutput(ILogWriter writer)
 		{
-			logger.SetOutput (writer);
+			Out.AddOutput (writer);
 		}
 
 		/// <summary>
@@ -368,7 +369,7 @@ namespace Dullahan.Env
 		/// <param name="reader"></param>
 		public void SetInput(ILogReader reader)
 		{
-			logger.SetInput (reader);
+			Out.SetInput (reader);
 		}
 		#endregion
 

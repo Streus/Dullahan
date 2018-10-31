@@ -3,7 +3,7 @@ using Dullahan.Logging;
 
 namespace Dullahan
 {
-	internal class ExecutorToConsoleRedirector : ILogWriter, ILogReader
+	internal class ConsoleRedirector : ILogWriter, ILogReader
 	{
 		public string ReadLine()
 		{
@@ -27,7 +27,7 @@ namespace Dullahan
 				Console.BackgroundColor = ConsoleColor.Black;
 			}
 
-			Console.WriteLine (msg.GetTags () + " " + msg.Content);
+			Console.WriteLine (msg.ToString(true, true));
 			Console.ResetColor ();
 		}
 	}
