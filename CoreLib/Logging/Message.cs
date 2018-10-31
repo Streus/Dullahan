@@ -36,10 +36,11 @@ namespace Dullahan.Logging
 
 		public Message() : this (TAG_DEFAULT, "") { }
 		public Message(string content) : this(TAG_DEFAULT, content) { }
-		public Message(string tag, string content)
+		public Message(string tag, string content) : this(new string[] { tag }, content) { }
+		public Message(string[] tags, string content)
 		{
 			Tags = new HashSet<string> ();
-			Tags.Add (tag);
+			Tags.UnionWith (tags);
 
 			Content = content;
 		}
