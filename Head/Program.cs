@@ -6,7 +6,7 @@ using System.Net;
 
 namespace Dullahan
 {
-	internal class Program : ILogWriter, ILogReader
+	internal class Program
 	{
 		#region ARG_FLAGS
 
@@ -47,8 +47,9 @@ namespace Dullahan
 
 			Executor.Init();
 			env = Executor.Build ();
-			env.SetOutput (this); //TODO executor redirect class
-			env.SetInput (this);
+			ExecutorToConsoleRedirector redir = new ExecutorToConsoleRedirector ();
+			env.SetOutput (redir); //TODO executor redirect class
+			env.SetInput (redir);
 
 			Connect ();
 
@@ -290,18 +291,6 @@ namespace Dullahan
 			Console.ForegroundColor = ConsoleColor.Red;
 			Console.Error.WriteLine (error);
 			Console.ResetColor ();
-		}
-
-		public void Write(Message msg)
-		{
-			//TODO write to console
-			throw new NotImplementedException ();
-		}
-
-		public string ReadLine()
-		{
-			//TODO read from console
-			throw new NotImplementedException ();
 		}
 
 		#region INTERNAL_TYPES

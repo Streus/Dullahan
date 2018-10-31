@@ -1,13 +1,11 @@
 ﻿using Dullahan.Logging;
-using System.Runtime.Serialization;
 
 namespace Dullahan.Net
 {
 	/// <summary>
 	/// Wrapper for data sent between clients and servers
 	/// </summary>
-	[System.Serializable]
-	public class Packet : ISerializable
+	public class Packet
 	{
 		#region STATIC_VARS
 
@@ -20,44 +18,30 @@ namespace Dullahan.Net
 		#region INSTANCE_VARS
 
 		public DataType type;
-		public string tag = Message.TAG_DEFAULT;
+		public string[] tags = new string[] { };
 		public string data = DEFAULT_DATA;
 		public int logResult = DEFAULT_LOG_RESULT;
 		#endregion
 
 		#region STATIC_METHODS
 
-		private static T TryGetValue<T>(SerializationInfo info, string key, T defaultValue)
-		{
-			try
-			{
-				return (T)info.GetValue(key, typeof(T));
-			}
-			//value wasn't saved, pass back the default
-			catch (SerializationException)
-			{
-				return defaultValue;
-			}
-		}
 		#endregion
 
 		#region INSTANCE_METHODS
 
 		public Packet(DataType type) : this(type, DEFAULT_DATA) { }
 		public Packet(DataType type, string data) : this(type, Message.TAG_DEFAULT, data) { }
-		public Packet(DataType type, string tag, string data)
+		public Packet(DataType type, string tag, string data) : this (type, new string[] { tag }, data) { }
+		public Packet(DataType type, string[] tags, string data)
 		{
 			this.type = type;
-			this.tag = tag;
+			this.tags = tags;
 			this.data = data;
 		}
-		public Packet(SerializationInfo info, StreamingContext context)
-		{
-			type = (DataType)info.GetInt32(TYPE_KEY);
-			tag = info.GetString(TAG_KEY);
 
-			data = TryGetValue<string>(info, DATA_KEY, DEFAULT_DATA);
-			logResult = TryGetValue<int>(info, LOGRES_KEY, DEFAULT_LOG_RESULT);
+		public byte[] ToBytes()
+		{
+
 		}
 
 		public override string ToString()
@@ -70,17 +54,6 @@ namespace Dullahan.Net
 			if (logResult != DEFAULT_LOG_RESULT)
 				str += ", Log Result: " + logResult;
 			return str + " }";
-		}
-
-		public void GetObjectData(SerializationInfo info, StreamingContext context)
-		{
-			info.AddValue(TYPE_KEY, (int)type);
-			info.AddValue(TAG_KEY, tag);
-
-			if (data != DEFAULT_DATA)
-				info.AddValue(DATA_KEY, data);
-			if (logResult != DEFAULT_LOG_RESULT)
-				info.AddValue(LOGRES_KEY, logResult);
 		}
 		#endregion
 
