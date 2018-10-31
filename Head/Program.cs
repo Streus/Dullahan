@@ -3,6 +3,7 @@ using Dullahan.Logging;
 using Dullahan.Net;
 using System;
 using System.Net;
+using System.Threading;
 
 namespace Dullahan
 {
@@ -31,10 +32,9 @@ namespace Dullahan
 
 		#region STATIC_VARS
 
-		private static volatile bool blocking = false;
-
 		private static Executor env;
-		private static Client client;
+		private static Endpoint client;
+		private static ConsoleRedirector redir;
 
 		private static IPAddress addr;
 		private static int port;
@@ -47,80 +47,108 @@ namespace Dullahan
 
 			Executor.Init();
 			env = Executor.Build ();
-			ExecutorToConsoleRedirector redir = new ExecutorToConsoleRedirector ();
+			redir = new ConsoleRedirector ();
 			env.SetOutput (redir); //TODO executor redirect class
 			env.SetInput (redir);
 
 			Connect ();
+			client.Flow = Endpoint.FlowState.outgoing;
 
 			//verify connection
-			client.SendAndWait(new Packet(Packet.DataType.management, "setup"));
-
-			if (execMode == ExecutionMode.command)
+			while (client.Connected)
 			{
-				client.SendAndWait(new Packet(Packet.DataType.command, "mute add " + client.Name));
+				Console.Write(addr.ToString() + "> ");
 
-				while (client.Connected)
+				string input;
+				if (execMode != ExecutionMode.listen)
+					input = Console.ReadLine ();
+				else
+					input = "listen -t all";
+
+				int commandResult = Executor.EXEC_FAILURE;
+
+				//try to run the command locally first
+				string[] parsedInput = env.ParseInput(input);
+				commandResult = env.InvokeCommand(parsedInput);
+
+				//didn't find command locally, send command to server
+				if (commandResult == Executor.EXEC_NOTFOUND)
 				{
-					Console.Write(client.Name + "> ");
-					string input = Console.ReadLine();
-					int commandResult = Executor.EXEC_FAILURE;
-					string exceptionText = "";
+					client.Send (new Packet (Packet.DataType.command, input));
+					client.Flow = Endpoint.FlowState.incoming;
 
-					//try to run the command locally first
-					string[] parsedInput = env.ParseInput(input);
-					Exception error;
-					commandResult = env.InvokeCommand(parsedInput, out error);
-					if (error != null)
-						exceptionText = error.ToString();
+					HandleResponses (ref commandResult);
 
-					//didn't find command locally, send command to server
-					if (commandResult == Executor.EXEC_NOTFOUND)
+					client.Flow = Endpoint.FlowState.outgoing;
+				}
+
+				//some failure occured
+				if(commandResult != 0)
+				{
+					Console.WriteLine("Status: " + commandResult);
+					switch (commandResult)
 					{
-						client.SendAndRead(new Packet(Packet.DataType.command, input), delegate (Client c, Packet p) {
-							if (p.type == Packet.DataType.response)
-							{
-								commandResult = p.logResult;
-								exceptionText = p.data;
-							}
-#if DEBUG
-							else
-								Console.WriteLine(DEBUG_TAG + " Received a non-response packet while waiting " +
-									"for a response from \"" + input + "\"");
-#endif
-						});
-					}
+						case Executor.EXEC_SKIP:
+							Write("Command does not fulfill requirements; execution skipped", ConsoleColor.Yellow);
+							break;
 
-					//some failure occured
-					if(commandResult != 0)
-					{
-						Console.WriteLine("Status: " + commandResult);
-						switch (commandResult)
-						{
-							case Executor.EXEC_SKIP:
-								Write("Command does not fulfill requirements; execution skipped", ConsoleColor.Yellow);
-								break;
+						case Executor.EXEC_FAILURE:
+							Write("Failed executing \"" + parsedInput[0] + "\"", ConsoleColor.Red);
+							break;
 
-							case Executor.EXEC_FAILURE:
-								Write(exceptionText, ConsoleColor.DarkRed);
-								break;
+						case Executor.EXEC_NOTFOUND:
+							Write("Command \"" + parsedInput[0] + "\" could not be found", ConsoleColor.Yellow);
+							break;
 
-							case Executor.EXEC_NOTFOUND:
-								Write("Command \"" + parsedInput[0] + "\" could not be found", ConsoleColor.Yellow);
-								break;
-
-							default:
-								Write("Unknown status", ConsoleColor.Red);
-								break;
-						}
+						default:
+							Write("Unknown status", ConsoleColor.Magenta);
+							break;
 					}
 				}
 			}
-			else if (execMode == ExecutionMode.listen)
+#if DEBUG
+			Console.WriteLine (DEBUG_TAG + " Exiting...");
+#endif
+		}
+
+		private static void HandleResponses(ref int commandResult)
+		{
+			Packet[] responses = null;
+			while (true)
 			{
-				while (client.Connected) { }
+				while (!client.HasPendingData ())
+				{
+#if DEBUG
+					Thread.Sleep (250);
+					Write ("waiting...", ConsoleColor.Gray);
+#endif
+				}
+				responses = client.Read ();
+				for (int i = 0; i < responses.Length; i++)
+				{
+					if (responses[i].Type == Packet.DataType.response)
+					{
+#if DEBUG
+						Write (DEBUG_TAG + " got response", ConsoleColor.Green);
+#endif
+						int.TryParse (responses[i].Data, out commandResult);
+						return;
+					}
+					else if (responses[i].Type == Packet.DataType.logentry)
+					{
+#if DEBUG
+						Write (DEBUG_TAG + " got log", ConsoleColor.Gray);
+#endif
+						redir.Write (responses[i].ToMessage ());
+					}
+#if DEBUG
+					else
+					{
+						Write (DEBUG_TAG + " Recieved an unexpected packet type: " + responses[i].Type.ToString (), ConsoleColor.Red);
+					}
+#endif
+				}
 			}
-			
 		}
 
 		/// <summary>
@@ -132,11 +160,12 @@ namespace Dullahan
 			//default values
 			string ip = "127.0.0.1";
 			IPAddress.TryParse (ip, out addr);
-			port = Client.DEFAULT_PORT;
+			port = Endpoint.DEFAULT_PORT;
 			execMode = ExecutionMode.listen;
 
 			if (args.Length <= 0)
 			{
+				//nothing to parse
 				return;
 			}
 
@@ -209,50 +238,6 @@ namespace Dullahan
 		}
 
 		/// <summary>
-		/// Attempt to connect to the remote host
-		/// </summary>
-		private static void Connect()
-		{
-			//start tcp client
-			client = new Client (addr, port); ;
-
-			if (execMode == ExecutionMode.command)
-				client.dataRead += CommandReceiveResponse;
-			else if (execMode == ExecutionMode.listen)
-				client.dataRead += ListenerReceiveResponse;
-			client.Start ();
-
-			//block for client to connect
-			while (!client.Connected)
-			{
-				if (client.Disconnected)
-				{
-					Write ("Exiting...", ConsoleColor.Red);
-					Environment.Exit (1);
-				}
-			}
-			Console.WriteLine ("\nConnected!");
-		}
-
-		private static void CommandReceiveResponse(Client endpoint, Packet packet)
-		{
-			if(packet.logResult != -1)
-			{
-				lock(client)
-				{
-					blocking = false;
-				}
-			}
-
-			Console.WriteLine(packet.data);
-		}
-
-		private static void ListenerReceiveResponse(Client endpoint, Packet packet)
-		{
-			Console.WriteLine(packet.data);
-		}
-
-		/// <summary>
 		/// Attempt to retreive an arguement from the given array, failing execution
 		/// if the argument does not exist, or fails to meet expectations.
 		/// </summary>
@@ -283,13 +268,34 @@ namespace Dullahan
 		}
 
 		/// <summary>
+		/// Attempt to connect to the remote host
+		/// </summary>
+		private static void Connect()
+		{
+			//start tcp client
+			client = new Endpoint (addr, port);
+			client.StartAsync ();
+
+			//block for client to connect
+			while (!client.Connected)
+			{
+				if (client.Disconnected)
+				{
+					Write ("Exiting...", ConsoleColor.Red);
+					Environment.Exit (1);
+				}
+			}
+			Console.WriteLine ("\nConnected!");
+		}
+
+		/// <summary>
 		/// Writes to the console with the indicated color
 		/// </summary>
 		/// <param name="error"></param>
-		private static void Write(string error, ConsoleColor color = ConsoleColor.White)
+		private static void Write(string text, ConsoleColor color)
 		{
-			Console.ForegroundColor = ConsoleColor.Red;
-			Console.Error.WriteLine (error);
+			Console.ForegroundColor = color;
+			Console.WriteLine (text);
 			Console.ResetColor ();
 		}
 

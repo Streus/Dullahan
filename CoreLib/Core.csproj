@@ -53,7 +53,7 @@
     <Compile Include="Logging\ILogWriter.cs" />
     <Compile Include="Logging\Log.cs" />
     <Compile Include="Logging\Message.cs" />
-    <Compile Include="Net\Client.cs" />
+    <Compile Include="Net\Endpoint.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Env\Executor.cs" />
     <Compile Include="User.cs" />

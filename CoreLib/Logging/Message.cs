@@ -1,12 +1,12 @@
-﻿using System.Collections.Generic;
-using System.Runtime.Serialization;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Dullahan.Logging
 {
 	/// <summary>
 	/// A discrete message logged to the system
 	/// </summary>
-	public class Message : ISerializable
+	public class Message
 	{
 		#region STATIC_VARS
 
@@ -20,6 +20,9 @@ namespace Dullahan.Logging
 
 		#region INSTANCE_VARS
 
+		private DateTime timeStamp;
+		public DateTime Time { get { return timeStamp; } }
+
 		/// <summary>
 		/// List of tags applied to this message
 		/// </summary>
@@ -30,6 +33,10 @@ namespace Dullahan.Logging
 		/// </summary>
 		public string Content { get; set; }
 
+		/// <summary>
+		/// Stacktrace info on the context of this message
+		/// </summary>
+		public string Context { get; set; }
 		#endregion
 
 		#region INSTANCE_METHODS
@@ -37,23 +44,16 @@ namespace Dullahan.Logging
 		public Message() : this (TAG_DEFAULT, "") { }
 		public Message(string content) : this(TAG_DEFAULT, content) { }
 		public Message(string tag, string content) : this(new string[] { tag }, content) { }
-		public Message(string[] tags, string content)
+		public Message(string[] tags, string content) : this (DateTime.Now, tags, content) { }
+		public Message(DateTime timeStamp, string[] tags, string content)
 		{
+			this.timeStamp = timeStamp;
+
 			Tags = new HashSet<string> ();
 			Tags.UnionWith (tags);
 
 			Content = content;
-		}
-		public Message(SerializationInfo info, StreamingContext context)
-		{
-			Tags = (HashSet<string>)info.GetValue ("t", typeof (HashSet<string>));
-			Content = info.GetString ("c");
-		}
-
-		public void GetObjectData(SerializationInfo info, StreamingContext context)
-		{
-			info.AddValue ("t", Tags);
-			info.AddValue ("c", Content);
+			Context = "";
 		}
 
 		/// <summary>
@@ -65,13 +65,35 @@ namespace Dullahan.Logging
 		{
 			string tags = "";
 			foreach (string s in Tags)
-				tags += "[" + s + "]";
+				tags += "[" + s.ToUpper() + "]";
+			return tags;
+		}
+
+		public string[] GetTagList()
+		{
+			string[] tags = new string[Tags.Count];
+			Tags.CopyTo (tags);
 			return tags;
 		}
 
 		public override string ToString()
 		{
-			return GetTags () + " " + Content;
+			return ToString (true);
+		}
+		public string ToString(bool includeTime)
+		{
+			return ToString (includeTime, true);
+		}
+		public string ToString(bool includeTime, bool includeTags)
+		{
+			string str = Content;
+			if (includeTags)
+				str = GetTags () + " " + str;
+			if(Context != "")
+				str = Context + " " + str;
+			if (includeTime)
+				str = timeStamp.ToString () + " " + str;
+			return str;
 		}
 		#endregion
 	}

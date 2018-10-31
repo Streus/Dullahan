@@ -19,5 +19,5 @@ namespace Dullahan.Env
 	/// </summary>
 	/// <param name="args"></param>
 	/// <returns></returns>
-	public delegate int CommandDelegate(string[] args, ref Log log); 
+	public delegate int CommandDelegate(string[] args, Executor env); 
 }
