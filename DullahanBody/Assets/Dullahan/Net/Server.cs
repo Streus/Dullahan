@@ -32,7 +32,7 @@ namespace Dullahan.Net
 		/// </summary>
 		private bool running;
 #if UNITY_EDITOR
-		private bool editorPlaying = false;
+		private bool editorPlaying = true;
 #endif
 
 		[SerializeField]
@@ -91,10 +91,21 @@ namespace Dullahan.Net
 #if UNITY_EDITOR
 			//Rx to EditorApplication events
 			UnityEditor.EditorApplication.pauseStateChanged += (UnityEditor.PauseState state) => {
-				editorPlaying = state != UnityEditor.PauseState.Paused;
+				switch (state)
+				{
+				case UnityEditor.PauseState.Paused:
+					editorPlaying = false;
 #if DEBUG
-				Debug.LogWarning (TAG + (editorPlaying ? " Now accepting commands" : " Now rejecting commands"));
+					Debug.LogWarning (TAG + " Now rejecting commands");
 #endif
+					break;
+				case UnityEditor.PauseState.Unpaused:
+					editorPlaying = true;
+#if DEBUG
+					Debug.LogWarning (TAG + " Now accepting commands");
+#endif
+					break;
+				}
 			};
 
 			UnityEditor.EditorApplication.quitting += () => {
@@ -219,7 +230,7 @@ namespace Dullahan.Net
 			Debug.Log(TAG + " Received packet.\n" + packet.ToString());
 #endif
 #if UNITY_EDITOR
-			if (editorPlaying)
+			if (!editorPlaying)
 			{
 #if DEBUG
 				Debug.LogWarning (TAG + " Received command req, but bounced back because Editor is paused.");
