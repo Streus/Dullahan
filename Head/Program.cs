@@ -1,8 +1,8 @@
 ﻿using Dullahan.Env;
-using Dullahan.Logging;
 using Dullahan.Net;
 using System;
 using System.Net;
+using System.Reflection;
 using System.Threading;
 
 namespace Dullahan
@@ -46,7 +46,8 @@ namespace Dullahan
 			Initialize (args);
 
 			Executor.Init();
-			env = Executor.Build ();
+			User.RegistryPath = Assembly.GetEntryAssembly ().CodeBase;
+			env = Executor.Build ("user");
 			redir = new ConsoleRedirector ();
 			env.SetOutput (redir); //TODO executor redirect class
 			env.SetInput (redir);
