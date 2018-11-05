@@ -159,7 +159,7 @@ namespace Dullahan.Env
 		~Executor()
 		{
 #if DEBUG
-			Console.WriteLine(DEBUG_TAG + " Environment completely cleared");
+			Console.WriteLine(DEBUG_TAG + " Environment \"" + Name +  "\" dropped");
 #endif
 		}
 

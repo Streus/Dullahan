@@ -16,7 +16,7 @@ namespace Dullahan.Net
 
 		public const int DEFAULT_PORT = 8080;
 
-		private const string DEBUG_TAG = "[ENDPNT]";
+		private const string DEBUG_TAG = "[DULCON]";
 
 		//length of the data buffer
 		private const int DB_LENGTH = 1024;

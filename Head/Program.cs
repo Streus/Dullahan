@@ -27,7 +27,9 @@ namespace Dullahan
 
 		#region MISC_CONSTANTS
 
+#if DEBUG
 		private const string DEBUG_TAG = "[PROG]";
+#endif
 		#endregion
 
 		#region STATIC_VARS
@@ -86,11 +88,13 @@ namespace Dullahan
 				//some failure occured
 				if(commandResult != 0)
 				{
-					Console.WriteLine("Status: " + commandResult);
+#if DEBUG
+					Console.WriteLine(DEBUG_TAG + " Status: " + commandResult);
+#endif
 					switch (commandResult)
 					{
 						case Executor.EXEC_SKIP:
-							Write("Command does not fulfill requirements; execution skipped", ConsoleColor.Yellow);
+							Write("Command execution skipped", ConsoleColor.Yellow);
 							break;
 
 						case Executor.EXEC_FAILURE:
@@ -102,7 +106,7 @@ namespace Dullahan
 							break;
 
 						default:
-							Write("Unknown status", ConsoleColor.Magenta);
+							Write("Unknown status (" + commandResult + ")", ConsoleColor.Magenta);
 							break;
 					}
 				}
@@ -120,8 +124,8 @@ namespace Dullahan
 				while (!client.HasPendingData ())
 				{
 #if DEBUG
+					Write (DEBUG_TAG + " waiting...", ConsoleColor.Gray);
 					Thread.Sleep (250);
-					Write ("waiting...", ConsoleColor.Gray);
 #endif
 				}
 				responses = client.Read ();
@@ -137,9 +141,6 @@ namespace Dullahan
 					}
 					else if (responses[i].Type == Packet.DataType.logentry)
 					{
-#if DEBUG
-						Write (DEBUG_TAG + " got log", ConsoleColor.Gray);
-#endif
 						redir.Write (responses[i].ToMessage ());
 					}
 #if DEBUG
@@ -303,10 +304,6 @@ namespace Dullahan
 		#region INTERNAL_TYPES
 
 		private enum ExecutionMode { listen, command }
-		#endregion
-
-		#region DEFAULT_COMMANDS
-
 		#endregion
 	}
 }

@@ -91,7 +91,7 @@ namespace Dullahan.Logging
 				str = GetTags () + " " + str;
 			if(Context != "")
 				str = Context + " " + str;
-			if (includeTime)
+			if (includeTime && timeStamp != default(DateTime))
 				str = timeStamp.ToString () + " " + str;
 			return str;
 		}

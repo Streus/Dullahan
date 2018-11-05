@@ -12,6 +12,8 @@ namespace Dullahan.Net
 	{
 		#region STATIC_VARS
 
+		private const string TAG = "[DULPKT]";
+
 		public const string DEFAULT_DATA = "";
 		private const int MIN_PACKET_SIZE = 28;
 		#endregion
@@ -59,7 +61,7 @@ namespace Dullahan.Net
 			int fullSize = BitConverter.ToInt32 (raw, seekPoint);
 			seekPoint += sizeof (int);
 #if DEBUG
-			Console.WriteLine ("Deserializing pack of size " + fullSize + "B");
+			Console.WriteLine (TAG + " Deserializing pack of size " + fullSize + "B");
 #endif
 
 			//packet type, 4 bytes
@@ -102,7 +104,7 @@ namespace Dullahan.Net
 			packet.Context = Encoding.ASCII.GetString (raw, seekPoint, contextLength);
 			seekPoint += contextLength;
 
-			return seekPoint;
+			return seekPoint - offset;
 		}
 		#endregion
 

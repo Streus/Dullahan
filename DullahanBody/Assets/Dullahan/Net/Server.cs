@@ -1,10 +1,10 @@
-﻿using System;
+﻿using Dullahan.Env;
+using Dullahan.Logging;
+using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine;
-using System.Collections.Generic;
-using Dullahan.Env;
-using Dullahan.Logging;
 
 [assembly: CommandProvider]
 
@@ -31,6 +31,9 @@ namespace Dullahan.Net
 		/// Indicates the state of the listening thread
 		/// </summary>
 		private bool running;
+#if UNITY_EDITOR
+		private bool editorPlaying = false;
+#endif
 
 		[SerializeField]
 		private int port = Endpoint.DEFAULT_PORT;
@@ -59,6 +62,10 @@ namespace Dullahan.Net
 
 		#region INSTANCE_METHODS
 
+#if UNITY_EDITOR
+
+#endif
+
 		public void Awake()
 		{
 			DontDestroyOnLoad(gameObject);
@@ -73,7 +80,6 @@ namespace Dullahan.Net
 				Debug.LogError (TAG + " More than one Dullahan Server active! Destroying " + gameObject.name);
 				Destroy (gameObject);
 			}
-
 #if DEBUG
 			//redirect stdout to the Unity console
 			Console.SetOut(new Utility.ConsoleRedirector(LogType.Log));
@@ -82,6 +88,19 @@ namespace Dullahan.Net
 			Console.SetError(new Utility.ConsoleRedirector(LogType.Error));
 #endif
 
+#if UNITY_EDITOR
+			//Rx to EditorApplication events
+			UnityEditor.EditorApplication.pauseStateChanged += (UnityEditor.PauseState state) => {
+				editorPlaying = state != UnityEditor.PauseState.Paused;
+#if DEBUG
+				Debug.LogWarning (TAG + (editorPlaying ? " Now accepting commands" : " Now rejecting commands"));
+#endif
+			};
+
+			UnityEditor.EditorApplication.quitting += () => {
+				Stop ();
+			};
+#endif
 			server = null;
 			users = new List<User>();
 			pendingPackets = new Queue<SourcedPacket>();
@@ -92,21 +111,13 @@ namespace Dullahan.Net
 			//set user directory
 			User.RegistryPath = Application.streamingAssetsPath;
 
-			Log.IncludeContext = true; //TODO remove
-
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
 		}
 
 		public void OnDestroy()
 		{
-			running = false;
-			for (int i = 0; i < instance.users.Count; i++)
-			{
-				users[i].Host.Disconnect ();
-			}
-
-			server.Stop ();
+			Stop ();
 			server = null;
 		}
 
@@ -173,7 +184,7 @@ namespace Dullahan.Net
 		public void Update()
 		{
 			//check for pending received data
-			while(pendingPackets.Count > 0)
+			while (pendingPackets.Count > 0)
 			{
 				SourcedPacket sp;
 				lock (pendingPackets)
@@ -207,50 +218,52 @@ namespace Dullahan.Net
 #if DEBUG
 			Debug.Log(TAG + " Received packet.\n" + packet.ToString());
 #endif
-			SourcedPacket sp = new SourcedPacket();
-
-			foreach (User u in users)
+#if UNITY_EDITOR
+			if (editorPlaying)
 			{
-				if (u.Host.Equals(source))
-				{
-					sp.user = u;
-					break;
-				}
-			}
-
-			sp.packet = packet;
-
-			lock (pendingPackets)
-			{
-				pendingPackets.Enqueue(sp);
-			}
-
-			source.ReadAsync ();
-		}
-
-		/// <summary>
-		/// Send data to all connected clients
-		/// </summary>
-		/// <param name="packet"></param>
-		public void Send(Packet packet)
-		{
 #if DEBUG
-			Debug.Log(TAG + " Sending packet.\n" + packet.ToString());
+				Debug.LogWarning (TAG + " Received command req, but bounced back because Editor is paused.");
 #endif
-			for(int i = 0; i < users.Count; i++)
-			{
-				users[i].Host.SendAsync(packet);
+				source.SendAsync (new Packet (Packet.DataType.logentry, Log.TAG_TYPE_WARNING, "Editor is currently paused; cannot execute!"));
+				source.SendAsync (new Packet (Packet.DataType.response, Executor.EXEC_SKIP + ""));
 			}
-		}
-		public void Send(Packet.DataType type, string data)
-		{
-			Send(type, Message.TAG_DEFAULT, data);
-		}
-		public void Send(Packet.DataType type, string tag, string data)
-		{
-			Send(new Packet(type, tag, data));
+			else
+			{
+#endif
+				SourcedPacket sp = new SourcedPacket ();
+
+				foreach (User u in users)
+				{
+					if (u.Host.Equals (source))
+					{
+						sp.user = u;
+						break;
+					}
+				}
+
+				sp.packet = packet;
+
+				lock (pendingPackets)
+				{
+					pendingPackets.Enqueue (sp);
+				}
+
+#if UNITY_EDITOR
+			}
+#endif
+				source.ReadAsync ();
 		}
 
+		public void Stop()
+		{
+			running = false;
+			for (int i = 0; i < instance.users.Count; i++)
+			{
+				users[i].Host.Disconnect ();
+			}
+
+			server.Stop ();
+		}
 		#endregion
 
 		#region INTERNAL_TYPES
@@ -278,46 +291,8 @@ namespace Dullahan.Net
 			if (args.Length < 2)
 				return Executor.EXEC_FAILURE;
 
-			env.Out.D ("SERVER", "Message was \"" + args[1] + "\"");
+			env.Out.D (TAG, "Message was \"" + args[1] + "\"");
 			return Executor.EXEC_SUCCESS;
-		}
-
-		/// <summary>
-		/// Diconnect all remote clients from the server.
-		/// </summary>
-		/// <param name="args"></param>
-		/// <returns></returns>
-		[Command(Invocation = "logout-all")]
-		private static int Disconnect(string[] args, Executor env)
-		{
-			if (instance != null)
-			{
-				try
-				{
-					instance.running = false;
-					for(int i = 0; i < instance.users.Count; i++)
-					{
-						instance.users[i].Host.Disconnect();
-					}
-
-					instance.server.Stop ();
-					instance.server = null;
-				}
-				catch (Exception e)
-				{
-					//something went wrong
-					Debug.LogException (e);
-					return Executor.EXEC_FAILURE;
-				}
-
-				//successfully disconnected
-				return Executor.EXEC_SUCCESS;
-			}
-
-			//nothing to disconnect from, strangely enough
-			//wait, how did the server get this?
-			//i'm gonna stop asking questions
-			return Executor.EXEC_SKIP;
 		}
 		#endregion
 	}
