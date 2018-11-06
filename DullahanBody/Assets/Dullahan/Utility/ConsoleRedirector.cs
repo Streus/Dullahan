@@ -23,18 +23,24 @@ namespace Dullahan.Utility
 
 		public override void Write(char value)
 		{
-			buffer.Append (value);
-			if (value == '\n')
-				Flush ();
+			lock (buffer)
+			{
+				buffer.Append (value);
+				if (value == '\n')
+					Flush ();
+			}
 		}
 
 		public override void Write(string value)
 		{
-			buffer.Append (value);
-			if (value != null)
+			lock (buffer)
 			{
-				if (value.Length > 0 && value[value.Length - 1] == '\n')
-					Flush ();
+				buffer.Append (value);
+				if (value != null)
+				{
+					if (value.Length > 0 && value[value.Length - 1] == '\n')
+						Flush ();
+				}
 			}
 		}
 

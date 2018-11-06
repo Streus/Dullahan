@@ -302,7 +302,8 @@ namespace Dullahan.Net
 			if (args.Length < 2)
 				return Executor.EXEC_FAILURE;
 
-			env.Out.D (TAG, "Message was \"" + args[1] + "\"");
+			for(int i = 0; i < 1000; i++)
+				env.Out.D (TAG, args[1]);
 			return Executor.EXEC_SUCCESS;
 		}
 		#endregion
