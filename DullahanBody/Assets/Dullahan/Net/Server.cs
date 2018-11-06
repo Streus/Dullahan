@@ -210,7 +210,9 @@ namespace Dullahan.Net
 					//run command and pass back success code
 					Message m = new Message (sp.user.Environment.InvokeCommand (sp.packet.Data).ToString ());
 					Packet responsePacket = new Packet (Packet.DataType.response, m);
-					sp.user.Host.Send(responsePacket); //TODO async brok?
+					//wait for all logging messages to get through before signaling exec end
+					while (sp.user.Host.Sending) { }
+					sp.user.Host.SendAsync(responsePacket);
 					break;
 
 					default:
@@ -270,6 +272,7 @@ namespace Dullahan.Net
 			running = false;
 			for (int i = 0; i < instance.users.Count; i++)
 			{
+				users[i].Host.Send (new Packet (Packet.DataType.command, "SERVER", "dulnet disconnect"));
 				users[i].Host.Disconnect ();
 			}
 
@@ -296,14 +299,14 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="args"></param>
 		/// <returns></returns>
-		[Command (Invocation = "echo")]
-		private static int Handshake(string[] args, Executor env)
+		[Command (Invocation = "echo", Help = "Echoes back the first argument provided")]
+		private static int EchoTest(string[] args, Executor env)
 		{
 			if (args.Length < 2)
 				return Executor.EXEC_FAILURE;
 
 			for(int i = 0; i < 1000; i++)
-				env.Out.D (TAG, args[1]);
+				env.Out.D ("SERVER", args[1]);
 			return Executor.EXEC_SUCCESS;
 		}
 		#endregion

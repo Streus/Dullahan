@@ -31,15 +31,43 @@ namespace Dullahan.Net
 		/// </summary>
 		public bool Connected { get; private set; }
 
+		private object stateMutex = new object ();
+
+		private int readingCount;
 		/// <summary>
 		/// Receiving data from the remote host.
 		/// </summary>
-		public bool Reading { get; private set; }
+		public bool Reading
+		{
+			get { return readingCount > 0; }
+			private set
+			{
+				lock (stateMutex)
+				{
+					readingCount += (value ? 1 : -1);
+					if (readingCount < 0)
+						readingCount = 0;
+				}
+			}
+		}
 
+		private int sendingCount;
 		/// <summary>
 		/// Sending data to the remote host.
 		/// </summary>
-		public bool Sending { get; private set; }
+		public bool Sending
+		{
+			get { return sendingCount > 0; }
+			private set
+			{
+				lock (stateMutex)
+				{
+					sendingCount += (value ? 1 : -1);
+					if (sendingCount < 0)
+						sendingCount = 0;
+				}
+			}
+		}
 
 		/// <summary>
 		/// Was connected and lost connection, or attempted connection failed.
@@ -58,6 +86,9 @@ namespace Dullahan.Net
 			}
 		}
 
+		/// <summary>
+		/// Determines what "direction" data will flow to/from.
+		/// </summary>
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
 		/// <summary>
@@ -118,6 +149,8 @@ namespace Dullahan.Net
 
 		private Endpoint()
 		{
+			readingCount = 0;
+			sendingCount = 0;
 			storedData = new List<byte> ();
 		}
 
@@ -135,7 +168,7 @@ namespace Dullahan.Net
 				{
 					//failed connection for some reason
 					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Could not connect to server at " + address.ToString () + ":" + port);
+					Console.Error.WriteLine ("Could not connect to " + address.ToString () + ":" + port);
 					Console.ResetColor ();
 					Disconnected = true;
 					return;
@@ -169,7 +202,7 @@ namespace Dullahan.Net
 			{
 				//failed connection for some reason
 				Console.ForegroundColor = ConsoleColor.Red;
-				Console.Error.WriteLine ("Could not connect to server at " + address.ToString() + ":" + port);
+				Console.Error.WriteLine ("Could not connect to " + address.ToString() + ":" + port);
 				Console.ResetColor ();
 				Disconnected = true;
 				return;
@@ -338,14 +371,13 @@ namespace Dullahan.Net
 
 		public void Disconnect()
 		{
-			Send (new Packet (Packet.DataType.command, "__disconnect")); //TODO recieve disconnect
 			stream.Close();
 			client.Close();
 			Sending = Reading = Connected = false;
 			Disconnected = true;
 			Flow = FlowState.none;
 #if DEBUG
-			Console.WriteLine (DEBUG_TAG + " Disconnected from remote host");
+			Console.WriteLine (DEBUG_TAG + " Disconnected from " + address.ToString() + ":" + port);
 #endif
 		}
 
@@ -383,14 +415,29 @@ namespace Dullahan.Net
 		public delegate void DataReceivedCallback(Endpoint endpoint, Packet data);
 
 		/// <summary>
-		/// Indicates the type of traffic this client will route
+		/// Indicates the type of traffic this endpoint will route.
 		/// </summary>
 		[Flags]
 		public enum FlowState
 		{
+			/// <summary>
+			/// All data will be ignored.
+			/// </summary>
 			none = 0x0,
+
+			/// <summary>
+			/// Only send data.
+			/// </summary>
 			outgoing = 0x1,
+
+			/// <summary>
+			/// Only recieve data.
+			/// </summary>
 			incoming = 0x2,
+
+			/// <summary>
+			/// Send and recieve data.
+			/// </summary>
 			bidirectional = outgoing | incoming
 		}
 		#endregion
