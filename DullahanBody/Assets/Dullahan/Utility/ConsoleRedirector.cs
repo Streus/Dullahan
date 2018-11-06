@@ -53,7 +53,7 @@ namespace Dullahan.Utility
 		{
 			get
 			{
-				return Encoding.Default;
+				return Encoding.ASCII;
 			}
 		}
 	}
