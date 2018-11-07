@@ -2,7 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace Dullahan.Net
@@ -26,10 +29,17 @@ namespace Dullahan.Net
 
 		public string Name { get; set; }
 
+		private IPAddress address;
+		private int port;
+
+		private TcpClient client;
+		private NetworkStream netStream;
+		private SslStream secureStream;
+
 		/// <summary>
 		/// Connected to the remote host.
 		/// </summary>
-		public bool Connected { get; private set; }
+		public bool Connected { get { return client != null && client.Connected; } }
 
 		private object stateMutex = new object ();
 
@@ -92,21 +102,14 @@ namespace Dullahan.Net
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
 		/// <summary>
-		/// Triggers when a read operation has finished, and data is available for use
-		/// </summary>
-		public event DataReceivedCallback dataRead;
-
-		private int port;
-
-		private IPAddress address;
-
-		private TcpClient client;
-		private NetworkStream stream;
-
-		/// <summary>
 		/// Data received
 		/// </summary>
 		private List<byte> storedData;
+
+		/// <summary>
+		/// Triggers when a read operation has finished, and data is available for use
+		/// </summary>
+		public event DataReceivedCallback dataRead;
 		#endregion
 
 		#region STATIC_METHODS
@@ -125,26 +128,23 @@ namespace Dullahan.Net
 			this.address = address;
 			this.port = port;
 
-			Connected = Reading = Sending = false;
-
-			client = new TcpClient();
-			stream = null;
+			client = new TcpClient ();
+			netStream = null;
 		}
 
 		/// <summary>
-		/// Create a new Client objct with an existing and connected TcpClient
+		/// Create a new Client object with an existing and connected TcpClient
 		/// </summary>
 		/// <param name="existingClient"></param>
 		public Endpoint(TcpClient existingClient) : this()
 		{
-			client = existingClient;
-			stream = client.GetStream();
-
-			Connected = true;
-			Reading = Sending = false;
-
 			address = null;
 			port = -1;
+
+			client = existingClient;
+			netStream = client.GetStream();
+			secureStream = new SslStream (netStream, false, ValidateConnectionCertificate);
+			secureStream.AuthenticateAsServer (null /* TODO server cert */, true, true);
 		}
 
 		private Endpoint()
@@ -158,24 +158,27 @@ namespace Dullahan.Net
 		{
 			if (!Connected)
 			{
-				//establish connection
-				client.Connect (address, port);
 				try
 				{
-					stream = client.GetStream ();
+					//establish connection
+					client.Connect (address, port);
+					netStream = client.GetStream ();
+					secureStream = new SslStream (netStream, false, ValidateConnectionCertificate);
+					secureStream.AuthenticateAsClient (address.ToString (), null /* TODO client certs */, true);
 				}
-				catch (InvalidOperationException)
+				catch (Exception e) when (e is AuthenticationException || e is InvalidOperationException)
 				{
 					//failed connection for some reason
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.Error.WriteLine ("Could not connect to " + address.ToString () + ":" + port);
+					Console.Error.WriteLine ("Cause: " + e.GetType().Name);
 					Console.ResetColor ();
 					Disconnected = true;
 					return;
 				}
-
-				//connection established
-				Connected = true;
+#if DEBUG
+				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
+#endif
 			}
 		}
 
@@ -187,34 +190,32 @@ namespace Dullahan.Net
 		{
 			if (!Connected)
 			{
-				//establish connection
-				client.BeginConnect(address, port, StartAsyncFinished, client);
+#if DEBUG
+				Console.WriteLine (DEBUG_TAG + " Starting async connect");
+#endif
+				new Thread (Start).Start ();
 			}
 		}
 
-		private void StartAsyncFinished(IAsyncResult res)
+		private bool ValidateConnectionCertificate(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors sslPolicyErrors)
 		{
-			try
-			{
-				stream = client.GetStream ();
-			}
-			catch (InvalidOperationException)
-			{
-				//failed connection for some reason
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.Error.WriteLine ("Could not connect to " + address.ToString() + ":" + port);
-				Console.ResetColor ();
-				Disconnected = true;
-				return;
-			}
+#if DEBUG
+			Console.WriteLine (DEBUG_TAG + " Connection request (Issuer: " + cert.Issuer + " Subject: " + cert.Subject + ")");
+#endif
 
-			//connection established
-			Connected = true;
+			if (sslPolicyErrors == SslPolicyErrors.None)
+				return true;
+
+#if DEBUG
+			Console.WriteLine (DEBUG_TAG + " Rejected connection request");
+#endif
+
+			return false;
 		}
 
 		public bool HasPendingData()
 		{
-			return stream != null && stream.DataAvailable;
+			return netStream != null && netStream.DataAvailable;
 		}
 
 		/// <summary>
@@ -232,9 +233,9 @@ namespace Dullahan.Net
 
 				byte[] dataBuffer = new byte[DB_LENGTH];
 				int byteC;
-				while (stream.DataAvailable)
+				while (netStream.DataAvailable)
 				{
-					byteC = stream.Read (dataBuffer, 0, dataBuffer.Length);
+					byteC = netStream.Read (dataBuffer, 0, dataBuffer.Length);
 					for (int i = 0; i < byteC; i++)
 					{
 						storedData.Add (dataBuffer[i]);
@@ -299,7 +300,7 @@ namespace Dullahan.Net
 		/// <param name="packet"></param>
 		public void Send(Packet packet)
 		{
-			if (stream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
+			if (netStream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
 				Sending = true;
 #if DEBUG
@@ -309,7 +310,7 @@ namespace Dullahan.Net
 				byte[] sendBytes = packet.ToBytes ();
 
 				//begin send operation
-				stream.Write (sendBytes, 0, sendBytes.Length);
+				netStream.Write (sendBytes, 0, sendBytes.Length);
 
 				Sending = false;
 #if DEBUG
@@ -324,7 +325,7 @@ namespace Dullahan.Net
 		/// <param name="packet"></param>
 		public void SendAsync(Packet packet)
 		{
-			if (stream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
+			if (netStream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
 #if DEBUG
 				Console.WriteLine(DEBUG_TAG + " Sending \"" + packet.Data + "\"");
@@ -333,7 +334,7 @@ namespace Dullahan.Net
 				byte[] sendBytes = packet.ToBytes ();
 
 				//begin send operation
-				stream.BeginWrite(sendBytes, 0, sendBytes.Length, SendAsyncFinished, stream);
+				netStream.BeginWrite(sendBytes, 0, sendBytes.Length, SendAsyncFinished, netStream);
 
 				Sending = true;
 			}
@@ -358,7 +359,7 @@ namespace Dullahan.Net
 		public bool SendAndRead(Packet outbound, out Packet[] inbound)
 		{
 			Send(outbound);
-			while (!stream.DataAvailable) { }
+			while (!netStream.DataAvailable) { }
 			inbound = Read ();
 
 			return true;
@@ -371,9 +372,10 @@ namespace Dullahan.Net
 
 		public void Disconnect()
 		{
-			stream.Close();
+			secureStream.Close ();
+			netStream.Close();
 			client.Close();
-			Sending = Reading = Connected = false;
+			Sending = Reading = false;
 			Disconnected = true;
 			Flow = FlowState.none;
 #if DEBUG
