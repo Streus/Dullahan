@@ -276,16 +276,12 @@ namespace Dullahan
 		{
 			//start tcp client
 			client = new Endpoint (addr, port);
-			client.StartAsync ();
+			client.Start (isServer: false);
 
-			//block for client to connect
-			while (!client.Connected)
+			if (client.Disconnected)
 			{
-				if (client.Disconnected)
-				{
-					Write ("Exiting...", ConsoleColor.Red);
-					Environment.Exit (1);
-				}
+				Write ("Exiting...", ConsoleColor.Red);
+				Environment.Exit (1);
 			}
 			Console.WriteLine ("\nConnected!");
 		}

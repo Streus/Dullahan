@@ -166,6 +166,7 @@ namespace Dullahan.Net
 			try
 			{
 				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
+				c.Start (isServer: true);
 				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
 				c.dataRead += DataReceived;
 				c.Flow = Endpoint.FlowState.bidirectional;
@@ -182,6 +183,7 @@ namespace Dullahan.Net
 			}
 			catch (Exception e)
 			{
+				Debug.LogError (TAG + " Failed adding new client");
 #if DEBUG
 				Debug.LogException (e);
 #endif
@@ -272,7 +274,7 @@ namespace Dullahan.Net
 			running = false;
 			for (int i = 0; i < instance.users.Count; i++)
 			{
-				users[i].Host.Send (new Packet (Packet.DataType.command, "SERVER", "dulnet disconnect"));
+				users[i].Host.Send (new Packet (Packet.DataType.command, "SERVER", "dulnet disconnect")); //TODO dulnet utility commands
 				users[i].Host.Disconnect ();
 			}
 
