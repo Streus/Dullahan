@@ -2,10 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace Dullahan.Net
@@ -29,14 +26,11 @@ namespace Dullahan.Net
 
 		public string Name { get; set; }
 
-		public bool IsServer { get { return secureStream != null && secureStream.IsServer; } }
-
 		private IPAddress address;
 		private int port;
 
 		private TcpClient connection;
 		private NetworkStream netStream;
-		private SslStream secureStream;
 
 		/// <summary>
 		/// Connected to the remote host.
@@ -140,7 +134,7 @@ namespace Dullahan.Net
 			netStream = connection.GetStream ();
 		}
 
-		public void Start(bool isServer)
+		public void Start()
 		{
 			if (!Connected)
 			{
@@ -164,51 +158,13 @@ namespace Dullahan.Net
 				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
 #endif
 			}
-
-			//set up SslStream
-			if (secureStream == null)
-			{
-				try
-				{
-					X509Certificate cert = new X509Certificate (); //TODO temp cert
-					secureStream = new SslStream (netStream, false, ValidateConnectionCertificate);
-					if (isServer)
-					{
-						secureStream.AuthenticateAsServer (
-							cert /* TODO server certs */,
-							true,
-							true);
-					}
-					else
-					{
-						secureStream.AuthenticateAsClient (
-							address.ToString (),
-							new X509CertificateCollection(new X509Certificate[] { cert }) /* TODO client certs */,
-							true);
-					}
-				}
-				catch (AuthenticationException ae)
-				{
-					//authentication failed
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Authentication with " + address + " failed");
-					Console.Error.WriteLine ("Cause: " + ae.Message);
-					Console.ResetColor ();
-					connection.Close ();
-					Disconnected = true;
-					return;
-				}
-#if DEBUG
-				Console.WriteLine (DEBUG_TAG + " Sucessfully authenticated with " + address + ":" + port);
-#endif
-			}
 		}
 
 		/// <summary>
 		/// If the Client is not connected to an endpoint, try connecting.
 		/// This function is async.
 		/// </summary>
-		public void StartAsync(bool isServer)
+		public void StartAsync()
 		{
 			if (!Connected)
 			{
@@ -216,25 +172,9 @@ namespace Dullahan.Net
 #if DEBUG
 					Console.WriteLine (DEBUG_TAG + " Starting async connect");
 #endif
-					Start (isServer);
+					Start ();
 				}).Start ();
 			}
-		}
-
-		private bool ValidateConnectionCertificate(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors sslPolicyErrors)
-		{
-#if DEBUG
-			Console.WriteLine (DEBUG_TAG + " Connection request (Issuer: " + cert.Issuer + " Subject: " + cert.Subject + ")");
-#endif
-
-			if (sslPolicyErrors == SslPolicyErrors.None)
-				return true;
-
-#if DEBUG
-			Console.WriteLine (DEBUG_TAG + " Rejected connection request");
-#endif
-
-			return false;
 		}
 
 		public bool HasPendingData()
@@ -259,7 +199,7 @@ namespace Dullahan.Net
 				int byteC;
 				while (netStream.DataAvailable)
 				{
-					byteC = secureStream.Read (dataBuffer, 0, dataBuffer.Length);
+					byteC = netStream.Read (dataBuffer, 0, dataBuffer.Length);
 					for (int i = 0; i < byteC; i++)
 					{
 						storedData.Add (dataBuffer[i]);
@@ -334,7 +274,7 @@ namespace Dullahan.Net
 				byte[] sendBytes = packet.ToBytes ();
 
 				//begin send operation
-				secureStream.Write (sendBytes, 0, sendBytes.Length);
+				netStream.Write (sendBytes, 0, sendBytes.Length);
 
 				Sending = false;
 #if DEBUG
@@ -358,7 +298,7 @@ namespace Dullahan.Net
 				byte[] sendBytes = packet.ToBytes ();
 
 				//begin send operation
-				secureStream.BeginWrite(sendBytes, 0, sendBytes.Length, SendAsyncFinished, null);
+				netStream.BeginWrite(sendBytes, 0, sendBytes.Length, SendAsyncFinished, null);
 
 				Sending = true;
 			}
@@ -366,7 +306,7 @@ namespace Dullahan.Net
 
 		private void SendAsyncFinished(IAsyncResult res)
 		{
-			secureStream.EndWrite (res);
+			netStream.EndWrite (res);
 
 			Sending = false;
 #if DEBUG
@@ -390,8 +330,8 @@ namespace Dullahan.Net
 
 		public void Disconnect()
 		{
-			if(secureStream != null)
-				secureStream.Close ();
+			if(netStream != null)
+				netStream.Close ();
 			connection.Close();
 			Sending = Reading = false;
 			Disconnected = true;

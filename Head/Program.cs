@@ -276,7 +276,7 @@ namespace Dullahan
 		{
 			//start tcp client
 			client = new Endpoint (addr, port);
-			client.Start (isServer: false);
+			client.Start ();
 
 			if (client.Disconnected)
 			{
