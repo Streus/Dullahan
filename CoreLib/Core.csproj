@@ -56,6 +56,7 @@
     <Compile Include="Net\Endpoint.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Env\Executor.cs" />
+    <Compile Include="Security\EncryptionManager.cs" />
     <Compile Include="User.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
