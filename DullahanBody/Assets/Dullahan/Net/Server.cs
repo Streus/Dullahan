@@ -166,7 +166,7 @@ namespace Dullahan.Net
 			try
 			{
 				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
-				c.Start ();
+				c.Accept ();
 				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
 				c.dataRead += DataReceived;
 				c.Flow = Endpoint.FlowState.bidirectional;

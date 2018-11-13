@@ -49,6 +49,12 @@ namespace Dullahan.Security
 			return selfKeyData.ExportCspBlob (false);
 		}
 
+		public void SetOtherPublicKey(byte[] key)
+		{
+			otherKeyData = new RSACryptoServiceProvider ();
+			otherKeyData.ImportCspBlob (key);
+		}
+
 		/// <summary>
 		/// Returns this filter's symmetric key, encrypted by another filter's public asymmetric key
 		/// </summary>
@@ -63,7 +69,7 @@ namespace Dullahan.Security
 					Mode = CipherMode.CTS
 				};
 			}
-			return selfKeyData.Encrypt (sessionKey.Key, false);
+			return otherKeyData.Encrypt (sessionKey.Key, false);
 		}
 
 		public void SetSymmetricKey(byte[] key)

@@ -276,7 +276,15 @@ namespace Dullahan
 		{
 			//start tcp client
 			client = new Endpoint (addr, port);
-			client.Start ();
+			try
+			{
+				client.Start ();
+			}
+			catch (Exception e)
+			{
+				Write ("Could not connect to " + addr + ":" + port
+					+ "\nCause: " + e.GetType ().Name, ConsoleColor.Red);
+			}
 
 			if (client.Disconnected)
 			{

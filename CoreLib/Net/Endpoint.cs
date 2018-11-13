@@ -1,4 +1,5 @@
 ﻿using Dullahan.Logging;
+using Dullahan.Security;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -97,6 +98,8 @@ namespace Dullahan.Net
 		/// </summary>
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
+		private EncryptionFilter secureFilter;
+
 		/// <summary>
 		/// Data received
 		/// </summary>
@@ -114,46 +117,64 @@ namespace Dullahan.Net
 
 		#region INSTANCE_METHODS
 
-		public Endpoint(IPAddress address, int port = DEFAULT_PORT) 
-			: this(new TcpClient(address.ToString(), port)) { }
+		/// <summary>
+		/// Create an unconnected Endpoint
+		/// </summary>
+		/// <param name="address"></param>
+		/// <param name="port"></param>
+		public Endpoint(IPAddress address, int port = DEFAULT_PORT) : this()
+		{
+			this.address = address;
+			this.port = port;
+
+			connection = new TcpClient ();
+		}
 
 		/// <summary>
-		/// Create a new Client object with an existing and connected TcpClient
+		/// Create a new Endpoint with an existing and connected TcpClient
 		/// </summary>
 		/// <param name="existingClient"></param>
-		public Endpoint(TcpClient existingClient)
+		public Endpoint(TcpClient existingClient) : this()
 		{
-
 			address = null;
 			port = -1;
-			readingCount = 0;
-			sendingCount = 0;
-			storedData = new List<byte> ();
 
 			connection = existingClient;
 			netStream = connection.GetStream ();
 		}
 
+		private Endpoint()
+		{
+			readingCount = 0;
+			sendingCount = 0;
+			storedData = new List<byte> ();
+			secureFilter = new EncryptionFilter ();
+		}
+
+		/// <summary>
+		/// Begins a connection. Sends public key to remote endpoint on success, and accepts
+		/// a symmetric key.
+		/// </summary>
+		/// <exception cref="ArgumentException"/>
+		/// <exception cref="ArgumentNullException"/>
+		/// <exception cref="InvalidOperationException"/>
+		/// <exception cref="ObjectDisposedException"/>
+		/// <exception cref="SocketException"/>
 		public void Start()
 		{
 			if (!Connected)
 			{
-				try
-				{
-					//establish connection
-					connection.Connect (address, port);
-					netStream = connection.GetStream ();
-				}
-				catch (Exception e) when (e is SocketException || e is InvalidOperationException || e is ObjectDisposedException)
-				{
-					//failed connection for some reason
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Could not connect to " + address + ":" + port);
-					Console.Error.WriteLine ("Cause: " + e.GetType().Name);
-					Console.ResetColor ();
-					Disconnected = true;
-					return;
-				}
+				//establish connection
+				connection.Connect (address, port);
+				netStream = connection.GetStream ();
+
+				//send public key
+				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())));
+				while (!HasPendingData ()) { }
+
+				//take symmetric key (encrypted by self public key)
+				Packet keyPacket = Read ()[0];
+				secureFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
 #if DEBUG
 				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
 #endif
@@ -175,6 +196,21 @@ namespace Dullahan.Net
 					Start ();
 				}).Start ();
 			}
+		}
+
+		/// <summary>
+		/// Counterpart to Start(). Generates a symmetric key and passes it to the remote endpoint.
+		/// </summary>
+		public void Accept()
+		{
+			while (!HasPendingData ()) { }
+
+			//take public key
+			Packet keyPacket = Read ()[0];
+			secureFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
+
+			//send symmetric key (encrypted with recieved public key)
+			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (secureFilter.GetSymmetricKey ())));
 		}
 
 		public bool HasPendingData()
@@ -209,7 +245,8 @@ namespace Dullahan.Net
 				Reading = false;
 
 				Packet[] packets;
-				int numRead = Packet.DeserializeAll (storedData.ToArray (), out packets);
+				byte[] finalData = secureFilter.Decrypt (storedData.ToArray ());
+				int numRead = Packet.DeserializeAll (finalData, out packets);
 				int leftOver = storedData.Count - numRead;
 				storedData.Clear ();
 
