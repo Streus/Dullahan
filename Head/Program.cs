@@ -283,7 +283,9 @@ namespace Dullahan
 			catch (Exception e)
 			{
 				Write ("Could not connect to " + addr + ":" + port
-					+ "\nCause: " + e.GetType ().Name, ConsoleColor.Red);
+					+ "\nCause: " + e.GetType ().Name
+					+ "\nMessage: " + e.Message,
+					ConsoleColor.Red);
 			}
 
 			if (client.Disconnected)

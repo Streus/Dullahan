@@ -148,7 +148,7 @@ namespace Dullahan.Net
 			readingCount = 0;
 			sendingCount = 0;
 			storedData = new List<byte> ();
-			secureFilter = new EncryptionFilter ();
+			secureFilter = null;
 		}
 
 		/// <summary>
@@ -167,6 +167,8 @@ namespace Dullahan.Net
 				//establish connection
 				connection.Connect (address, port);
 				netStream = connection.GetStream ();
+
+				secureFilter = new EncryptionFilter ();
 
 				//send public key
 				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())));
@@ -204,6 +206,8 @@ namespace Dullahan.Net
 		public void Accept()
 		{
 			while (!HasPendingData ()) { }
+
+			secureFilter = new EncryptionFilter ();
 
 			//take public key
 			Packet keyPacket = Read ()[0];
@@ -245,7 +249,11 @@ namespace Dullahan.Net
 				Reading = false;
 
 				Packet[] packets;
-				byte[] finalData = secureFilter.Decrypt (storedData.ToArray ());
+				byte[] finalData;
+				if (secureFilter.Ready)
+					finalData = secureFilter.Decrypt (storedData.ToArray ());
+				else
+					finalData = storedData.ToArray ();
 				int numRead = Packet.DeserializeAll (finalData, out packets);
 				int leftOver = storedData.Count - numRead;
 				storedData.Clear ();
@@ -309,9 +317,14 @@ namespace Dullahan.Net
 #endif
 				//convert packet into binary data
 				byte[] sendBytes = packet.ToBytes ();
+				byte[] finalData;
+				if (secureFilter.Ready)
+					finalData = secureFilter.Decrypt (sendBytes);
+				else
+					finalData = sendBytes;
 
 				//begin send operation
-				netStream.Write (sendBytes, 0, sendBytes.Length);
+				netStream.Write (finalData, 0, finalData.Length);
 
 				Sending = false;
 #if DEBUG
@@ -326,18 +339,17 @@ namespace Dullahan.Net
 		/// <param name="packet"></param>
 		public void SendAsync(Packet packet)
 		{
-			if (netStream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
+			if ((Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
+				new Thread (() => {
 #if DEBUG
-				Console.WriteLine(DEBUG_TAG + " Sending \"" + packet.Data + "\"");
+					Console.WriteLine (DEBUG_TAG + " Started async send");
 #endif
-				//convert packet into binary data
-				byte[] sendBytes = packet.ToBytes ();
-
-				//begin send operation
-				netStream.BeginWrite(sendBytes, 0, sendBytes.Length, SendAsyncFinished, null);
-
-				Sending = true;
+					Send (packet);
+#if DEBUG
+					Console.WriteLine (DEBUG_TAG + " Finished sending");
+#endif
+				}).Start ();
 			}
 		}
 
@@ -346,23 +358,7 @@ namespace Dullahan.Net
 			netStream.EndWrite (res);
 
 			Sending = false;
-#if DEBUG
-			Console.WriteLine (DEBUG_TAG + " Finished sending");
-#endif
-		}
 
-		/// <summary>
-		/// Perform a Send and block for the response
-		/// </summary>
-		/// <param name="outbound"></param>
-		/// <returns></returns>
-		public bool SendAndRead(Packet outbound, out Packet[] inbound)
-		{
-			Send(outbound);
-			while (!netStream.DataAvailable) { }
-			inbound = Read ();
-
-			return true;
 		}
 
 		public void Disconnect()

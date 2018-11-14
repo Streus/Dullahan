@@ -13,13 +13,12 @@ namespace Dullahan.Security
 		#region STATIC_VARS
 
 		public const string CONTAINER_NAME = "DullahanRSA";
-		public const int SYMMETRIC_KEY_SIZE = 256;
 		#endregion
 
 		#region INSTANCE_VARS
 
-		public RSAEncryptionPadding Padding { get; set; }
-		public string KeyDumpPath { get; set; } = "";
+		public RSAEncryptionPadding Padding { get; set; } = RSAEncryptionPadding.Pkcs1;
+		public bool Ready { get { return sessionKey != null; } }
 
 		private RSACryptoServiceProvider selfKeyData;
 		private RSACryptoServiceProvider otherKeyData;
@@ -64,17 +63,22 @@ namespace Dullahan.Security
 			if (sessionKey == null)
 			{
 				sessionKey = new RijndaelManaged () {
-					KeySize = SYMMETRIC_KEY_SIZE,
-					BlockSize = SYMMETRIC_KEY_SIZE,
-					Mode = CipherMode.CTS
+					Mode = CipherMode.CBC,
+					Padding = PaddingMode.PKCS7
 				};
+				sessionKey.GenerateKey ();
 			}
-			return otherKeyData.Encrypt (sessionKey.Key, false);
+			return otherKeyData.Encrypt (sessionKey.Key, Padding);
 		}
 
 		public void SetSymmetricKey(byte[] key)
 		{
-			sessionKey.Key = selfKeyData.Decrypt (key, false);
+			sessionKey = new RijndaelManaged () {
+				Key = selfKeyData.Decrypt (key, Padding),
+				Mode = CipherMode.CBC,
+				Padding = PaddingMode.PKCS7
+			};
+			
 		}
 
 		/// <summary>
@@ -96,6 +100,7 @@ namespace Dullahan.Security
 				using (CryptoStream encryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Write))
 				{
 					encryptStream.Write (data, 0, data.Length);
+					encryptStream.FlushFinalBlock ();
 					encryptedData = byteStream.ToArray ();
 				}
 			}
@@ -129,6 +134,7 @@ namespace Dullahan.Security
 				using (CryptoStream decryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Read))
 				{
 					decryptStream.Write (data, 0, data.Length);
+					decryptStream.FlushFinalBlock ();
 					decryptedData = byteStream.ToArray ();
 				}
 			}
