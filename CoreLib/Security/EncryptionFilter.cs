@@ -12,12 +12,15 @@ namespace Dullahan.Security
 	{
 		#region STATIC_VARS
 
-		public const string CONTAINER_NAME = "DullahanRSA";
+		private const string CONTAINER_NAME = "DullahanRSA";
+
+		private const int KEY_SIZE = 256;
+		private const int BLOCK_SIZE = 32;
 		#endregion
 
 		#region INSTANCE_VARS
 
-		public RSAEncryptionPadding Padding { get; set; } = RSAEncryptionPadding.Pkcs1;
+		private RSAEncryptionPadding Padding { get; set; } = RSAEncryptionPadding.Pkcs1;
 		public bool Ready { get { return sessionKey != null; } }
 
 		private RSACryptoServiceProvider selfKeyData;
@@ -64,11 +67,13 @@ namespace Dullahan.Security
 			{
 				sessionKey = new RijndaelManaged () {
 					Mode = CipherMode.CBC,
-					Padding = PaddingMode.PKCS7
+					Padding = PaddingMode.Zeros,
+					KeySize = KEY_SIZE,
+					BlockSize = BLOCK_SIZE
 				};
 				sessionKey.GenerateKey ();
 			}
-			return otherKeyData.Encrypt (sessionKey.Key, Padding);
+			return otherKeyData?.Encrypt (sessionKey.Key, Padding);
 		}
 
 		public void SetSymmetricKey(byte[] key)
@@ -76,9 +81,12 @@ namespace Dullahan.Security
 			sessionKey = new RijndaelManaged () {
 				Key = selfKeyData.Decrypt (key, Padding),
 				Mode = CipherMode.CBC,
-				Padding = PaddingMode.PKCS7
+				Padding = PaddingMode.Zeros,
+				BlockSize = BLOCK_SIZE
 			};
-			
+
+			if (sessionKey.KeySize != KEY_SIZE)
+				throw new ArgumentException ("Symmetric key size mismatch");
 		}
 
 		/// <summary>
@@ -93,13 +101,18 @@ namespace Dullahan.Security
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
 
 			byte[] encryptedData;
+			int seekPoint = 0;
 			try
 			{
 				ICryptoTransform transform = sessionKey.CreateEncryptor ();
 				using (MemoryStream byteStream = new MemoryStream ())
 				using (CryptoStream encryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Write))
 				{
-					encryptStream.Write (data, 0, data.Length);
+					while (seekPoint < data.Length)
+					{
+						encryptStream.Write (data, seekPoint, BLOCK_SIZE);
+						seekPoint += BLOCK_SIZE;
+					}
 					encryptStream.FlushFinalBlock ();
 					encryptedData = byteStream.ToArray ();
 				}
@@ -107,7 +120,7 @@ namespace Dullahan.Security
 			catch (CryptographicException ce)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Encountered Crypto error while encrypting: " + ce.Message);
+				Console.Error.WriteLine ("Encountered Crypto error while encrypting: " + ce.ToString());
 #endif
 				return null;
 			}
@@ -127,13 +140,18 @@ namespace Dullahan.Security
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
 
 			byte[] decryptedData;
+			int seekPoint = 0;
 			try
 			{
 				ICryptoTransform transform = sessionKey.CreateDecryptor ();
 				using (MemoryStream byteStream = new MemoryStream ())
-				using (CryptoStream decryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Read))
+				using (CryptoStream decryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Write))
 				{
-					decryptStream.Write (data, 0, data.Length);
+					while (seekPoint < data.Length)
+					{
+						decryptStream.Write (data, seekPoint, BLOCK_SIZE);
+						seekPoint += BLOCK_SIZE;
+					}
 					decryptStream.FlushFinalBlock ();
 					decryptedData = byteStream.ToArray ();
 				}
@@ -141,7 +159,7 @@ namespace Dullahan.Security
 			catch (CryptographicException ce)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Encountered Crypto error while decrypting: " + ce.Message);
+				Console.Error.WriteLine ("Encountered Crypto error while decrypting: " + ce.ToString());
 #endif
 				return null;
 			}
