@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 
@@ -73,16 +74,52 @@ namespace Dullahan.Security
 					BlockSize = BLOCK_SIZE
 				};
 			}
-			return otherKeyData?.Encrypt (sessionKey.Key, false);
+
+			List<byte> keyAndIV = new List<byte> (sizeof (int) + sessionKey.Key.Length
+				+ sizeof (int) + sessionKey.IV.Length);
+
+			keyAndIV.AddRange (BitConverter.GetBytes (sessionKey.Key.Length));
+			keyAndIV.AddRange (BitConverter.GetBytes (sessionKey.IV.Length));
+			keyAndIV.AddRange (sessionKey.Key);
+			keyAndIV.AddRange (sessionKey.IV);
+
+			return otherKeyData?.Encrypt (keyAndIV.ToArray (), false);
 		}
 
-		public void SetSymmetricKey(byte[] key)
+		public void SetSymmetricKey(byte[] keyData)
 		{
+			if(keyData.Length < sizeof(int) * 2)
+				throw new ArgumentException ("keyData is too short: " + keyData.Length + "B");
+
+			byte[] data = selfKeyData.Decrypt (keyData, false);
+
+			int seekPoint = 0;
+
+			int keyLength = BitConverter.ToInt32 (data, seekPoint);
+			seekPoint += sizeof (int);
+
+			int ivLength = BitConverter.ToInt32(data, seekPoint);
+			seekPoint += sizeof (int);
+
+			byte[] key = new byte[keyLength];
+			for (int i = 0; i < keyLength; i++)
+			{
+				key[i] = data[seekPoint + i];
+			}
+			seekPoint += keyLength;
+
+			byte[] iv = new byte[ivLength];
+			for (int i = 0; i < ivLength; i++)
+			{
+				iv[i] = data[seekPoint + i];
+			}
+
 			sessionKey = new RijndaelManaged () {
-				Key = selfKeyData.Decrypt (key, false),
 				Mode = CipherMode.CBC,
 				Padding = PaddingMode.PKCS7,
-				BlockSize = BLOCK_SIZE
+				BlockSize = BLOCK_SIZE,
+				Key = key,
+				IV = iv
 			};
 
 			if (sessionKey.KeySize != KEY_SIZE)

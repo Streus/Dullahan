@@ -286,6 +286,7 @@ namespace Dullahan
 					+ "\nCause: " + e.GetType ().Name
 					+ "\nMessage: " + e.Message,
 					ConsoleColor.Red);
+				Environment.Exit (1);
 			}
 
 			if (client.Disconnected)
