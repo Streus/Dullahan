@@ -8,19 +8,21 @@ namespace Dullahan.Security
 	/// Encrypts and decrypts raw byte data via a symmetric algorithm after exchanging 
 	/// the symmetric key via an asymmetric algorithm with another EncryptionFilter.
 	/// </summary>
-	public class EncryptionFilter
+	public sealed class EncryptionFilter
 	{
 		#region STATIC_VARS
+
+		private const string TAG = "[DULSEC]";
 
 		private const string CONTAINER_NAME = "DullahanRSA";
 
 		private const int KEY_SIZE = 256;
-		private const int BLOCK_SIZE = 32;
+		private const int BLOCK_SIZE = 256;
+		private const int BLOCK_SIZE_B = BLOCK_SIZE / 8;
 		#endregion
 
 		#region INSTANCE_VARS
 
-		private RSAEncryptionPadding Padding { get; set; } = RSAEncryptionPadding.Pkcs1;
 		public bool Ready { get { return sessionKey != null; } }
 
 		private RSACryptoServiceProvider selfKeyData;
@@ -67,21 +69,19 @@ namespace Dullahan.Security
 			{
 				sessionKey = new RijndaelManaged () {
 					Mode = CipherMode.CBC,
-					Padding = PaddingMode.Zeros,
-					KeySize = KEY_SIZE,
+					Padding = PaddingMode.PKCS7,
 					BlockSize = BLOCK_SIZE
 				};
-				sessionKey.GenerateKey ();
 			}
-			return otherKeyData?.Encrypt (sessionKey.Key, Padding);
+			return otherKeyData?.Encrypt (sessionKey.Key, false);
 		}
 
 		public void SetSymmetricKey(byte[] key)
 		{
 			sessionKey = new RijndaelManaged () {
-				Key = selfKeyData.Decrypt (key, Padding),
+				Key = selfKeyData.Decrypt (key, false),
 				Mode = CipherMode.CBC,
-				Padding = PaddingMode.Zeros,
+				Padding = PaddingMode.PKCS7,
 				BlockSize = BLOCK_SIZE
 			};
 
@@ -99,32 +99,34 @@ namespace Dullahan.Security
 		{
 			if (sessionKey == null)
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
+#if DEBUG
+			Console.WriteLine (TAG + " Encrypting " + data.Length + "B");
+#endif
 
 			byte[] encryptedData;
-			int seekPoint = 0;
 			try
 			{
 				ICryptoTransform transform = sessionKey.CreateEncryptor ();
 				using (MemoryStream byteStream = new MemoryStream ())
 				using (CryptoStream encryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Write))
 				{
-					while (seekPoint < data.Length)
-					{
-						encryptStream.Write (data, seekPoint, BLOCK_SIZE);
-						seekPoint += BLOCK_SIZE;
-					}
+					encryptStream.Write (data, 0, data.Length);
 					encryptStream.FlushFinalBlock ();
+
 					encryptedData = byteStream.ToArray ();
 				}
 			}
 			catch (CryptographicException ce)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Encountered Crypto error while encrypting: " + ce.ToString());
+				Console.Error.WriteLine (TAG + " Encountered Crypto error while encrypting: " + ce.ToString());
 #endif
 				return null;
 			}
 
+#if DEBUG
+			Console.Error.WriteLine (TAG + " Size of encrypted data: " + encryptedData.Length + "B");
+#endif
 			return encryptedData;
 		}
 
@@ -138,32 +140,39 @@ namespace Dullahan.Security
 		{
 			if (sessionKey == null)
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
+#if DEBUG
+			Console.Error.WriteLine (TAG + " Decrypting " + data.Length + "B");
+#endif
 
 			byte[] decryptedData;
-			int seekPoint = 0;
 			try
 			{
 				ICryptoTransform transform = sessionKey.CreateDecryptor ();
-				using (MemoryStream byteStream = new MemoryStream ())
-				using (CryptoStream decryptStream = new CryptoStream (byteStream, transform, CryptoStreamMode.Write))
+				using (MemoryStream inStream = new MemoryStream (data))
+				using (MemoryStream outStream = new MemoryStream ())
+				using (CryptoStream decryptStream = new CryptoStream (inStream, transform, CryptoStreamMode.Read))
+				using (BinaryReader decryptReader = new BinaryReader (decryptStream))
 				{
-					while (seekPoint < data.Length)
+					byte[] buffer = new byte[BLOCK_SIZE_B];
+					int byteC;
+					while ((byteC = decryptReader.Read (buffer, 0, buffer.Length)) != 0)
 					{
-						decryptStream.Write (data, seekPoint, BLOCK_SIZE);
-						seekPoint += BLOCK_SIZE;
+						outStream.Write (buffer, 0, byteC);
 					}
-					decryptStream.FlushFinalBlock ();
-					decryptedData = byteStream.ToArray ();
+					decryptedData = outStream.ToArray ();
 				}
 			}
 			catch (CryptographicException ce)
 			{
 #if DEBUG
-				Console.Error.WriteLine ("Encountered Crypto error while decrypting: " + ce.ToString());
+				Console.Error.WriteLine (TAG + " Encountered Crypto error while decrypting: " + ce.ToString());
 #endif
 				return null;
 			}
 
+#if DEBUG
+			Console.WriteLine (TAG + " Size of decrypted data: " + decryptedData.Length + "B");
+#endif
 			return decryptedData;
 		}
 		#endregion

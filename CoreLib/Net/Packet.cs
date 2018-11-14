@@ -37,6 +37,9 @@ namespace Dullahan.Net
 		/// <returns>Number of read bytes</returns>
 		public static int DeserializeAll(byte[] raw, out Packet[] packets)
 		{
+			if (raw.Length < MIN_PACKET_SIZE)
+				throw new ArgumentException (raw.Length + " is too small for a packet; must be >= " + MIN_PACKET_SIZE);
+
 			int sk = 0;
 			List<Packet> pList = new List<Packet> ();
 			while(sk < raw.Length)
@@ -50,9 +53,6 @@ namespace Dullahan.Net
 		}
 		private static int Deserialize(byte[] raw, int offset, out Packet packet)
 		{
-			if (raw.Length < MIN_PACKET_SIZE)
-				throw new ArgumentException (raw.Length + " is too small for a packet; must be >= " + MIN_PACKET_SIZE);
-
 			packet = new Packet ();
 
 			int seekPoint = offset;
@@ -61,7 +61,7 @@ namespace Dullahan.Net
 			int fullSize = BitConverter.ToInt32 (raw, seekPoint);
 			seekPoint += sizeof (int);
 #if DEBUG
-			Console.WriteLine (TAG + " Deserializing pack of size " + fullSize + "B");
+			Console.WriteLine (TAG + " Deserializing packet of size " + fullSize + "B");
 #endif
 
 			//packet type, 4 bytes
