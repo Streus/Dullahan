@@ -307,7 +307,7 @@ namespace Dullahan.Net
 			if (args.Length < 2)
 				return Executor.EXEC_FAILURE;
 
-			for(int i = 0; i < 1000; i++)
+			for(int i = 0; i < 1; i++)
 				env.Out.D ("SERVER", args[1]);
 			return Executor.EXEC_SUCCESS;
 		}

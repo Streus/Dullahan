@@ -1,9 +1,10 @@
 ﻿using Dullahan.Logging;
 using Dullahan.Security;
 using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 
 namespace Dullahan.Net
@@ -101,11 +102,6 @@ namespace Dullahan.Net
 		private EncryptionFilter secureFilter;
 
 		/// <summary>
-		/// Data received
-		/// </summary>
-		private List<byte> storedData;
-
-		/// <summary>
 		/// Triggers when a read operation has finished, and data is available for use
 		/// </summary>
 		public event DataReceivedCallback dataRead;
@@ -147,7 +143,6 @@ namespace Dullahan.Net
 		{
 			readingCount = 0;
 			sendingCount = 0;
-			storedData = new List<byte> ();
 			secureFilter = null;
 		}
 
@@ -168,15 +163,17 @@ namespace Dullahan.Net
 				connection.Connect (address, port);
 				netStream = connection.GetStream ();
 
-				secureFilter = new EncryptionFilter ();
+				//store filter in temp var so that next few sends and reads aren't encrypted
+				EncryptionFilter tempFilter = new EncryptionFilter ();
 
 				//send public key
-				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())), false);
+				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (tempFilter.GetPublicKey ())));
 				while (!HasPendingData ()) { }
 
 				//take symmetric key (encrypted by self public key)
-				Packet keyPacket = Read (encrypted: false)[0];
-				secureFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
+				Packet keyPacket = Read ()[0];
+				tempFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
+				secureFilter = tempFilter;
 #if DEBUG
 				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
 #endif
@@ -207,14 +204,16 @@ namespace Dullahan.Net
 		{
 			while (!HasPendingData ()) { }
 
-			secureFilter = new EncryptionFilter ();
+			//store filter in temp var so that next few sends and reads aren't encrypted
+			EncryptionFilter tempFilter = new EncryptionFilter ();
 
 			//take public key
-			Packet keyPacket = Read (encrypted: false)[0];
-			secureFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
+			Packet keyPacket = Read ()[0];
+			tempFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
 
 			//send symmetric key (encrypted with recieved public key)
-			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (secureFilter.GetSymmetricKey ())), false);
+			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (tempFilter.GetSymmetricKey ())));
+			secureFilter = tempFilter;
 		}
 
 		public bool HasPendingData()
@@ -226,40 +225,55 @@ namespace Dullahan.Net
 		/// Blocking read from the currently open connection
 		/// </summary>
 		/// <returns></returns>
-		public Packet[] Read(bool encrypted = true)
+		public Packet[] Read()
 		{
-			if (HasPendingData() && (Flow & FlowState.incoming) == FlowState.incoming)
+			if (HasPendingData () && (Flow & FlowState.incoming) == FlowState.incoming)
 			{
 #if DEBUG
 				Console.WriteLine (DEBUG_TAG + " Beginning read");
 #endif
 				Reading = true;
 
-				byte[] dataBuffer = new byte[DB_LENGTH];
-				int byteC;
-				while (netStream.DataAvailable)
+				//read from the network
+				byte[] data;
+				lock (netStream)
 				{
-					byteC = netStream.Read (dataBuffer, 0, dataBuffer.Length);
-					for (int i = 0; i < byteC; i++)
+					using (MemoryStream received = new MemoryStream ())
+					using (BinaryReader reader = new BinaryReader (netStream, Encoding.UTF8, true))
 					{
-						storedData.Add (dataBuffer[i]);
+						byte[] buffer = new byte[DB_LENGTH];
+						int byteC;
+						while (netStream.DataAvailable
+							&& (byteC = reader.Read (buffer, 0, buffer.Length)) != 0)
+						{
+							received.Write (buffer, 0, byteC);
+						}
+						data = received.ToArray ();
 					}
 				}
 
-				Reading = false;
-
+				//decrypt
 				Packet[] packets;
 				byte[] finalData;
-				if (encrypted && secureFilter.Ready)
-					finalData = secureFilter.Decrypt (storedData.ToArray ());
+				if (secureFilter != null && secureFilter.Ready)
+				{
+					lock (secureFilter)
+					{
+						finalData = secureFilter.Decrypt (data);
+					}
+				}
 				else
-					finalData = storedData.ToArray ();
-				int numRead = Packet.DeserializeAll (finalData, out packets);
-				int leftOver = storedData.Count - numRead;
-				storedData.Clear ();
+				{
+					finalData = data;
+				}
 
+				//deserialize into packets
+				int bytesRead = Packet.DeserializeAll (finalData, out packets);
+
+				Reading = false;
 #if DEBUG
-				Console.WriteLine (DEBUG_TAG + " Finished read (read: " + numRead + "B, leftover: " + leftOver + "B)");
+				int leftOver = data.Length - bytesRead;
+				Console.WriteLine (DEBUG_TAG + " Finished read (read: " + bytesRead + "B, leftover: " + leftOver + "B)");
 #endif
 				return packets;
 			}
@@ -269,7 +283,7 @@ namespace Dullahan.Net
 		/// <summary>
 		/// Read from the currently open connection asynchronously
 		/// </summary>
-		public void ReadAsync(bool encrypted = true)
+		public void ReadAsync()
 		{
 			if ((Flow & FlowState.incoming) == FlowState.incoming)
 			{
@@ -282,7 +296,7 @@ namespace Dullahan.Net
 					{
 						while (!HasPendingData ()) { }
 
-						Packet[] packets = Read (encrypted);
+						Packet[] packets = Read ();
 
 						if (dataRead != null)
 						{
@@ -307,7 +321,7 @@ namespace Dullahan.Net
 		/// Blocking send over the open connection
 		/// </summary>
 		/// <param name="packet"></param>
-		public void Send(Packet packet, bool encrypted = true)
+		public void Send(Packet packet)
 		{
 			if (netStream != null && (Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
@@ -318,13 +332,23 @@ namespace Dullahan.Net
 				//convert packet into binary data
 				byte[] sendBytes = packet.ToBytes ();
 				byte[] finalData;
-				if (encrypted && secureFilter.Ready)
-					finalData = secureFilter.Encrypt (sendBytes);
+				if (secureFilter != null && secureFilter.Ready)
+				{
+					lock (secureFilter)
+					{
+						finalData = secureFilter.Encrypt (sendBytes);
+					}
+				}
 				else
+				{
 					finalData = sendBytes;
+				}
 
 				//begin send operation
-				netStream.Write (finalData, 0, finalData.Length);
+				lock (netStream)
+				{
+					netStream.Write (finalData, 0, finalData.Length);
+				}
 
 				Sending = false;
 #if DEBUG
@@ -337,7 +361,7 @@ namespace Dullahan.Net
 		/// Send data over the open connection asynchronously
 		/// </summary>
 		/// <param name="packet"></param>
-		public void SendAsync(Packet packet, bool encrypted = true)
+		public void SendAsync(Packet packet)
 		{
 			if ((Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
@@ -345,20 +369,12 @@ namespace Dullahan.Net
 #if DEBUG
 					Console.WriteLine (DEBUG_TAG + " Started async send");
 #endif
-					Send (packet, encrypted);
+					Send (packet);
 #if DEBUG
 					Console.WriteLine (DEBUG_TAG + " Finished sending");
 #endif
 				}).Start ();
 			}
-		}
-
-		private void SendAsyncFinished(IAsyncResult res)
-		{
-			netStream.EndWrite (res);
-
-			Sending = false;
-
 		}
 
 		public void Disconnect()
@@ -382,6 +398,15 @@ namespace Dullahan.Net
 		public override bool Equals(object obj)
 		{
 			return Name.Equals(((Endpoint)obj).Name);
+		}
+
+		public override string ToString()
+		{
+			string str = nameof (Endpoint) + "(";
+			IPEndPoint endpointInfo = (IPEndPoint)connection.Client.RemoteEndPoint;
+			str += endpointInfo.Address + ":" + endpointInfo.Port + ")";
+
+			return str;
 		}
 
 		#region INTERFACE_METHODS

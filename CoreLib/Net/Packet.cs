@@ -14,8 +14,10 @@ namespace Dullahan.Net
 
 		private const string TAG = "[DULPKT]";
 
-		public const string DEFAULT_DATA = "";
+		private const string DEFAULT_DATA = "";
 		private const int MIN_PACKET_SIZE = 28;
+
+		public const long FOOTER = ~0L;
 		#endregion
 
 		#region INSTANCE_VARS

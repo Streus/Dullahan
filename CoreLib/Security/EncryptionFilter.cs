@@ -162,7 +162,7 @@ namespace Dullahan.Security
 			}
 
 #if DEBUG
-			Console.Error.WriteLine (TAG + " Size of encrypted data: " + encryptedData.Length + "B");
+			Console.WriteLine (TAG + " Size of encrypted data: " + encryptedData.Length + "B");
 #endif
 			return encryptedData;
 		}
@@ -178,7 +178,7 @@ namespace Dullahan.Security
 			if (sessionKey == null)
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
 #if DEBUG
-			Console.Error.WriteLine (TAG + " Decrypting " + data.Length + "B");
+			Console.WriteLine (TAG + " Decrypting " + data.Length + "B");
 #endif
 
 			byte[] decryptedData;
