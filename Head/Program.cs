@@ -286,6 +286,9 @@ namespace Dullahan
 					+ "\nCause: " + e.GetType ().Name
 					+ "\nMessage: " + e.Message,
 					ConsoleColor.Red);
+#if DEBUG
+				Console.WriteLine (DEBUG_TAG + "More info: " + e.ToString ());
+#endif
 				Environment.Exit (1);
 			}
 

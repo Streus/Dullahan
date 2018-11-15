@@ -21,7 +21,7 @@ namespace Dullahan.Net
 		private const string DEBUG_TAG = "[DULCON]";
 
 		//length of the data buffer
-		private const int DB_LENGTH = 1024;
+		private const int DB_LENGTH = sizeof(long);
 		#endregion
 
 		#region INSTANCE_VARS
@@ -163,17 +163,16 @@ namespace Dullahan.Net
 				connection.Connect (address, port);
 				netStream = connection.GetStream ();
 
-				//store filter in temp var so that next few sends and reads aren't encrypted
-				EncryptionFilter tempFilter = new EncryptionFilter ();
+				secureFilter = new EncryptionFilter ();
 
 				//send public key
-				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (tempFilter.GetPublicKey ())));
+				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())));
 				while (!HasPendingData ()) { }
 
 				//take symmetric key (encrypted by self public key)
 				Packet keyPacket = Read ()[0];
-				tempFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
-				secureFilter = tempFilter;
+				secureFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
+				secureFilter.Enabled = true;
 #if DEBUG
 				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
 #endif
@@ -204,16 +203,15 @@ namespace Dullahan.Net
 		{
 			while (!HasPendingData ()) { }
 
-			//store filter in temp var so that next few sends and reads aren't encrypted
-			EncryptionFilter tempFilter = new EncryptionFilter ();
+			secureFilter = new EncryptionFilter ();
 
 			//take public key
 			Packet keyPacket = Read ()[0];
-			tempFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
+			secureFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
 
 			//send symmetric key (encrypted with recieved public key)
-			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (tempFilter.GetSymmetricKey ())));
-			secureFilter = tempFilter;
+			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (secureFilter.GetSymmetricKey ())));
+			secureFilter.Enabled = true;
 		}
 
 		public bool HasPendingData()
@@ -238,7 +236,8 @@ namespace Dullahan.Net
 				byte[] data;
 				lock (netStream)
 				{
-					using (MemoryStream received = new MemoryStream ())
+					using (MemoryStream decryptStream = new MemoryStream ())
+					using (MemoryStream readingStream = new MemoryStream ())
 					using (BinaryReader reader = new BinaryReader (netStream, Encoding.UTF8, true))
 					{
 						byte[] buffer = new byte[DB_LENGTH];
@@ -246,29 +245,33 @@ namespace Dullahan.Net
 						while (netStream.DataAvailable
 							&& (byteC = reader.Read (buffer, 0, buffer.Length)) != 0)
 						{
-							received.Write (buffer, 0, byteC);
+							//hit the end of a packet
+							if (buffer.Length == DB_LENGTH
+								&& BitConverter.ToInt64 (buffer, 0) == Packet.FOOTER)
+							{
+								//attempt to decrypt contents of readingStream
+								byte[] decryptedBytes = readingStream.ToArray ();
+								lock (secureFilter)
+								{
+									decryptedBytes = secureFilter.Decrypt (decryptedBytes);
+								}
+								//write decrypted to another stream, reset reading stream
+								decryptStream.Write (decryptedBytes, 0, decryptedBytes.Length);
+								readingStream.Seek (0L, SeekOrigin.Begin);
+							}
+							//still reading an encrypted(?) packet
+							else
+							{
+								readingStream.Write (buffer, 0, byteC);
+							}
 						}
-						data = received.ToArray ();
+						data = decryptStream.ToArray ();
 					}
-				}
-
-				//decrypt
-				Packet[] packets;
-				byte[] finalData;
-				if (secureFilter != null && secureFilter.Ready)
-				{
-					lock (secureFilter)
-					{
-						finalData = secureFilter.Decrypt (data);
-					}
-				}
-				else
-				{
-					finalData = data;
 				}
 
 				//deserialize into packets
-				int bytesRead = Packet.DeserializeAll (finalData, out packets);
+				Packet[] packets;
+				int bytesRead = Packet.DeserializeAll (data, out packets);
 
 				Reading = false;
 #if DEBUG
@@ -332,22 +335,16 @@ namespace Dullahan.Net
 				//convert packet into binary data
 				byte[] sendBytes = packet.ToBytes ();
 				byte[] finalData;
-				if (secureFilter != null && secureFilter.Ready)
+				lock (secureFilter)
 				{
-					lock (secureFilter)
-					{
-						finalData = secureFilter.Encrypt (sendBytes);
-					}
-				}
-				else
-				{
-					finalData = sendBytes;
+					finalData = secureFilter.Encrypt (sendBytes);
 				}
 
 				//begin send operation
 				lock (netStream)
 				{
 					netStream.Write (finalData, 0, finalData.Length);
+					netStream.Write (BitConverter.GetBytes (Packet.FOOTER), 0, sizeof (long));
 				}
 
 				Sending = false;

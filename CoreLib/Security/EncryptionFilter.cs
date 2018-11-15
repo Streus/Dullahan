@@ -24,7 +24,7 @@ namespace Dullahan.Security
 
 		#region INSTANCE_VARS
 
-		public bool Ready { get { return sessionKey != null; } }
+		public bool Enabled { get; set; } = false;
 
 		private RSACryptoServiceProvider selfKeyData;
 		private RSACryptoServiceProvider otherKeyData;
@@ -134,6 +134,9 @@ namespace Dullahan.Security
 		/// <returns></returns>
 		public byte[] Encrypt(byte[] data)
 		{
+			if (!Enabled)
+				return data;
+
 			if (sessionKey == null)
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
 #if DEBUG
@@ -175,6 +178,9 @@ namespace Dullahan.Security
 		/// <returns></returns>
 		public byte[] Decrypt(byte[] data)
 		{
+			if (!Enabled)
+				return data;
+
 			if (sessionKey == null)
 				throw new InvalidOperationException ("Cannot encrypt without symmetric key");
 #if DEBUG
