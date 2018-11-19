@@ -39,22 +39,34 @@ namespace Dullahan.Net
 		/// <returns>Number of read bytes</returns>
 		public static int DeserializeAll(byte[] raw, out Packet[] packets)
 		{
-			if (raw.Length < MIN_PACKET_SIZE)
-				throw new ArgumentException (raw.Length + " is too small for a packet; must be >= " + MIN_PACKET_SIZE);
-
 			int sk = 0;
 			List<Packet> pList = new List<Packet> ();
 			while(sk < raw.Length)
 			{
 				Packet p;
-				sk += Deserialize (raw, sk, out p);
-				pList.Add (p);
+				try
+				{
+					sk += Deserialize (raw, sk, out p);
+					pList.Add (p);
+				}
+				catch (ArgumentException)
+				{
+					//just be done?
+					//TODO figure out why there are hanging bytes on the ends of some packets
+#if DEBUG
+					Console.Error.WriteLine (TAG + " Encountered hanging bytes: " + (raw.Length - sk) + "B");
+#endif
+					break;
+				}
 			}
 			packets = pList.ToArray ();
 			return sk;
 		}
 		private static int Deserialize(byte[] raw, int offset, out Packet packet)
 		{
+			if (raw.Length - offset < MIN_PACKET_SIZE)
+				throw new ArgumentException ((raw.Length - offset) + "B is too small for a packet; must be >= " + MIN_PACKET_SIZE);
+
 			packet = new Packet ();
 
 			int seekPoint = offset;

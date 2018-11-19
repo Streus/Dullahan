@@ -19,9 +19,6 @@ namespace Dullahan.Net
 		public const int DEFAULT_PORT = 8080;
 
 		private const string DEBUG_TAG = "[DULCON]";
-
-		//length of the data buffer
-		private const int DB_LENGTH = sizeof(long);
 		#endregion
 
 		#region INSTANCE_VARS
@@ -240,13 +237,13 @@ namespace Dullahan.Net
 					using (MemoryStream readingStream = new MemoryStream ())
 					using (BinaryReader reader = new BinaryReader (netStream, Encoding.UTF8, true))
 					{
-						byte[] buffer = new byte[DB_LENGTH];
+						byte[] buffer = new byte[sizeof(long)];
 						int byteC;
 						while (netStream.DataAvailable
 							&& (byteC = reader.Read (buffer, 0, buffer.Length)) != 0)
 						{
 							//hit the end of a packet
-							if (buffer.Length == DB_LENGTH
+							if (buffer.Length == sizeof (long)
 								&& BitConverter.ToInt64 (buffer, 0) == Packet.FOOTER)
 							{
 								//attempt to decrypt contents of readingStream
@@ -333,18 +330,23 @@ namespace Dullahan.Net
 				Console.WriteLine (DEBUG_TAG + " Sending \"" + packet.Data + "\"");
 #endif
 				//convert packet into binary data
-				byte[] sendBytes = packet.ToBytes ();
-				byte[] finalData;
+				byte[] sendBytes;
 				lock (secureFilter)
 				{
-					finalData = secureFilter.Encrypt (sendBytes);
+					sendBytes = secureFilter.Encrypt (packet.ToBytes ());
 				}
 
-				//begin send operation
-				lock (netStream)
+				using (MemoryStream sendStream = new MemoryStream ())
 				{
-					netStream.Write (finalData, 0, finalData.Length);
-					netStream.Write (BitConverter.GetBytes (Packet.FOOTER), 0, sizeof (long));
+					sendStream.Write (sendBytes, 0, sendBytes.Length);
+					sendStream.Write (BitConverter.GetBytes (Packet.FOOTER), 0, sizeof (long));
+
+					//begin send operation
+					lock (netStream)
+					{
+						sendBytes = sendStream.ToArray ();
+						netStream.Write (sendBytes, 0, sendBytes.Length);
+					}
 				}
 
 				Sending = false;
