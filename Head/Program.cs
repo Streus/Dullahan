@@ -279,6 +279,8 @@ namespace Dullahan
 			try
 			{
 				client.Start ();
+				while (!client.HasPendingData ()) { }
+				Packet p = client.Read ()[0];
 			}
 			catch (Exception e)
 			{

@@ -31,6 +31,20 @@ namespace Dullahan.Net
 		private TcpClient connection;
 		private NetworkStream netStream;
 
+		public bool Encrypted
+		{
+			get { return secureFilter != null && secureFilter.Enabled; }
+			//set { if (secureFilter != null) secureFilter.Enabled = value; }
+		}
+
+		/// <summary>
+		/// Public key of the other side connected to this endpoint
+		/// </summary>
+		public string ConnectionIdentity
+		{
+			get { return Convert.ToBase64String(secureFilter?.GetOtherPublicKey ()); }
+		}
+
 		/// <summary>
 		/// Connected to the remote host.
 		/// </summary>
@@ -164,12 +178,31 @@ namespace Dullahan.Net
 
 				//send public key
 				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())));
-				while (!HasPendingData ()) { }
 
 				//take symmetric key (encrypted by self public key)
+				while (!HasPendingData ()) { }
 				Packet keyPacket = Read ()[0];
 				secureFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
 				secureFilter.Enabled = true;
+
+				//recieve encryption pref
+				while (!HasPendingData ()) { }
+				Packet encryptPrefPacket = Read ()[0];
+				bool useEncryption;
+				if (bool.TryParse (encryptPrefPacket.Data, out useEncryption))
+				{
+					secureFilter.Enabled = useEncryption;
+#if DEBUG
+					Console.WriteLine (DEBUG_TAG + " Set encryption pref to " + useEncryption.ToString());
+#endif
+				}
+				else
+				{
+#if DEBUG
+					Console.Error.WriteLine (DEBUG_TAG + " Failed parse of encryption pref: \"" + encryptPrefPacket.Data + "\"");
+#endif
+					secureFilter.Enabled = false;
+				}
 #if DEBUG
 				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
 #endif
@@ -196,7 +229,7 @@ namespace Dullahan.Net
 		/// <summary>
 		/// Counterpart to Start(). Generates a symmetric key and passes it to the remote endpoint.
 		/// </summary>
-		public void Accept()
+		public void Accept(bool useEncryption)
 		{
 			while (!HasPendingData ()) { }
 
@@ -208,6 +241,9 @@ namespace Dullahan.Net
 
 			//send symmetric key (encrypted with recieved public key)
 			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (secureFilter.GetSymmetricKey ())));
+
+			//set encryption prefs on both sides
+			Send (new Packet (Packet.DataType.command, useEncryption.ToString ()));
 			secureFilter.Enabled = true;
 		}
 

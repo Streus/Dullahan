@@ -15,7 +15,7 @@ namespace Dullahan.Net
 	/// Dullahan Head (CLI side).
 	/// </summary>
 	[CommandProvider]
-	[AddComponentMenu("Dullahan/Server"), DisallowMultipleComponent]
+	[AddComponentMenu ("Dullahan/Server"), DisallowMultipleComponent]
 	public sealed class Server : MonoBehaviour
 	{
 		#region STATIC_VARS
@@ -34,9 +34,16 @@ namespace Dullahan.Net
 #if UNITY_EDITOR
 		private bool editorPlaying = true;
 #endif
-
+		[Header ("General")]
 		[SerializeField]
 		private int port = Endpoint.DEFAULT_PORT;
+
+		[Header("Security")]
+		[SerializeField]
+		private bool useEncryption = false;
+
+		[SerializeField]
+		private ConnectionPolicy connectionPolicy = ConnectionPolicy.AskFirst;
 
 		private TcpListener server;
 		private List<User> users;
@@ -166,11 +173,12 @@ namespace Dullahan.Net
 			try
 			{
 				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
-				c.Accept ();
+				c.Accept (useEncryption);
 				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
 				c.dataRead += DataReceived;
 				c.Flow = Endpoint.FlowState.bidirectional;
-				c.ReadAsync ();
+
+				string identity = c.ConnectionIdentity;
 
 				User u = User.Load ("User");
 				u.Host = c;
@@ -180,6 +188,7 @@ namespace Dullahan.Net
 #if DEBUG
 				Debug.Log (TAG + " Added new client.\nName: " + c.Name + "\nHost: " + c.ToString () + "\nEnv: " + u.Environment.ToString ());
 #endif
+				c.ReadAsync ();
 			}
 			catch (Exception e)
 			{
@@ -291,6 +300,14 @@ namespace Dullahan.Net
 		{
 			public Packet packet;
 			public User user;
+		}
+
+		public enum ConnectionPolicy
+		{
+			AcceptAll,
+			AskFirst,
+			AskForNew,
+			DenyAll
 		}
 		#endregion
 

@@ -60,6 +60,11 @@ namespace Dullahan.Security
 			otherKeyData.ImportCspBlob (key);
 		}
 
+		public byte[] GetOtherPublicKey()
+		{
+			return otherKeyData.ExportCspBlob (false);
+		}
+
 		/// <summary>
 		/// Returns this filter's symmetric key, encrypted by another filter's public asymmetric key
 		/// </summary>
