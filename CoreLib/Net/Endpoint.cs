@@ -1,9 +1,11 @@
 ﻿using Dullahan.Logging;
-using Dullahan.Security;
 using System;
 using System.IO;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 
@@ -33,8 +35,7 @@ namespace Dullahan.Net
 
 		public bool Encrypted
 		{
-			get { return secureFilter != null && secureFilter.Enabled; }
-			//set { if (secureFilter != null) secureFilter.Enabled = value; }
+			get { return secureStream != null && secureStream.IsEncrypted; }
 		}
 
 		/// <summary>
@@ -42,7 +43,7 @@ namespace Dullahan.Net
 		/// </summary>
 		public string ConnectionIdentity
 		{
-			get { return Convert.ToBase64String(secureFilter?.GetOtherPublicKey ()); }
+			get { return secureStream?.RemoteCertificate.GetPublicKeyString(); }
 		}
 
 		/// <summary>
@@ -110,7 +111,7 @@ namespace Dullahan.Net
 		/// </summary>
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
-		private EncryptionFilter secureFilter;
+		private SslStream secureStream;
 
 		/// <summary>
 		/// Triggers when a read operation has finished, and data is available for use
@@ -154,18 +155,13 @@ namespace Dullahan.Net
 		{
 			readingCount = 0;
 			sendingCount = 0;
-			secureFilter = null;
+			secureStream = null;
 		}
 
 		/// <summary>
-		/// Begins a connection. Sends public key to remote endpoint on success, and accepts
-		/// a symmetric key.
+		/// Begins a client connection.
 		/// </summary>
-		/// <exception cref="ArgumentException"/>
-		/// <exception cref="ArgumentNullException"/>
-		/// <exception cref="InvalidOperationException"/>
-		/// <exception cref="ObjectDisposedException"/>
-		/// <exception cref="SocketException"/>
+		/// <exception cref="AuthenticationException"/>
 		public void Start()
 		{
 			if (!Connected)
@@ -174,77 +170,65 @@ namespace Dullahan.Net
 				connection.Connect (address, port);
 				netStream = connection.GetStream ();
 
-				secureFilter = new EncryptionFilter ();
-
-				//send public key
-				Send (new Packet (Packet.DataType.command, Convert.ToBase64String (secureFilter.GetPublicKey ())));
-
-				//take symmetric key (encrypted by self public key)
 				while (!HasPendingData ()) { }
-				Packet keyPacket = Read ()[0];
-				secureFilter.SetSymmetricKey (Convert.FromBase64String (keyPacket.Data));
-				secureFilter.Enabled = true;
-
-				//recieve encryption pref
-				while (!HasPendingData ()) { }
-				Packet encryptPrefPacket = Read ()[0];
+				Packet p = Read ()[0];
 				bool useEncryption;
-				if (bool.TryParse (encryptPrefPacket.Data, out useEncryption))
+				if (!bool.TryParse (p.Data, out useEncryption))
 				{
-					secureFilter.Enabled = useEncryption;
-#if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Set encryption pref to " + useEncryption.ToString());
-#endif
+					throw new Exception ("Received malformed encryption setting from server");
 				}
-				else
+
+				try
 				{
-#if DEBUG
-					Console.Error.WriteLine (DEBUG_TAG + " Failed parse of encryption pref: \"" + encryptPrefPacket.Data + "\"");
-#endif
-					secureFilter.Enabled = false;
+					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
+
+					secureStream.AuthenticateAsClient (address.ToString (), null/* TODO client certs*/, true);
 				}
-#if DEBUG
-				Console.WriteLine (DEBUG_TAG + " Sucessfully connected to " + address + ":" + port);
-#endif
+				catch (AuthenticationException ae)
+				{
+					//authentication failed
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.Error.WriteLine ("Authentication with " + address + " failed");
+					Console.Error.WriteLine ("Cause: " + ae.Message);
+					Console.ResetColor ();
+					connection.Close ();
+					Disconnected = true;
+					return;
+				}
 			}
 		}
 
 		/// <summary>
-		/// If the Client is not connected to an endpoint, try connecting.
-		/// This function is async.
-		/// </summary>
-		public void StartAsync()
-		{
-			if (!Connected)
-			{
-				new Thread (() => {
-#if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Starting async connect");
-#endif
-					Start ();
-				}).Start ();
-			}
-		}
-
-		/// <summary>
-		/// Counterpart to Start(). Generates a symmetric key and passes it to the remote endpoint.
+		/// Begins a server connection. Counterpart to Start().
 		/// </summary>
 		public void Accept(bool useEncryption)
 		{
-			while (!HasPendingData ()) { }
+			try
+			{
+				secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
-			secureFilter = new EncryptionFilter ();
+				secureStream.AuthenticateAsServer (null/* TODO Server certs*/, true, true);
+			}
+			catch (AuthenticationException ae)
+			{
+				//authentication failed
+				Console.Error.WriteLine ("Authentication with " 
+					+ ((IPEndPoint)connection.Client.RemoteEndPoint).Address + " failed");
+				Console.Error.WriteLine ("Cause: " + ae.Message);
+				connection.Close ();
+				Disconnected = true;
+				return;
+			}
+		}
 
-			//take public key
-			Packet keyPacket = Read ()[0];
-			secureFilter.SetOtherPublicKey (Convert.FromBase64String (keyPacket.Data));
-
-			//send symmetric key (encrypted with recieved public key)
-			Send (new Packet (Packet.DataType.response, Convert.ToBase64String (secureFilter.GetSymmetricKey ())));
-
-			//set encryption prefs on both sides
-			Send (new Packet (Packet.DataType.command, useEncryption.ToString ()));
-			secureFilter.Enabled = true;
+		private bool ValidateRemoteCert(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors errors)
+		{
+			if (errors == SslPolicyErrors.None)
+				return true;
+#if DEBUG
+			Console.Error.WriteLine("Server validation error: " + errors);
+#endif
+			return false;
 		}
 
 		public bool HasPendingData()
@@ -269,42 +253,23 @@ namespace Dullahan.Net
 				byte[] data;
 				lock (netStream)
 				{
-					using (MemoryStream decryptStream = new MemoryStream ())
 					using (MemoryStream readingStream = new MemoryStream ())
-					using (BinaryReader reader = new BinaryReader (netStream, Encoding.UTF8, true))
+					using (BinaryReader reader = new BinaryReader (secureStream, Encoding.UTF8, true))
 					{
-						byte[] buffer = new byte[sizeof(long)];
+						byte[] buffer = new byte[1024];
 						int byteC;
 						while (netStream.DataAvailable
 							&& (byteC = reader.Read (buffer, 0, buffer.Length)) != 0)
 						{
-							//hit the end of a packet
-							if (buffer.Length == sizeof (long)
-								&& BitConverter.ToInt64 (buffer, 0) == Packet.FOOTER)
-							{
-								//attempt to decrypt contents of readingStream
-								byte[] decryptedBytes = readingStream.ToArray ();
-								lock (secureFilter)
-								{
-									decryptedBytes = secureFilter.Decrypt (decryptedBytes);
-								}
-								//write decrypted to another stream, reset reading stream
-								decryptStream.Write (decryptedBytes, 0, decryptedBytes.Length);
-								readingStream.Seek (0L, SeekOrigin.Begin);
-							}
-							//still reading an encrypted(?) packet
-							else
-							{
-								readingStream.Write (buffer, 0, byteC);
-							}
+							readingStream.Write (buffer, 0, byteC);
 						}
-						data = decryptStream.ToArray ();
+						data = readingStream.ToArray ();
 					}
 				}
 
 				//deserialize into packets
 				Packet[] packets;
-				int bytesRead = Packet.DeserializeAll (data, out packets);
+				int bytesRead = Packet.DeserializeAll (out packets, data);
 
 				Reading = false;
 #if DEBUG
@@ -367,27 +332,16 @@ namespace Dullahan.Net
 #endif
 				//convert packet into binary data
 				byte[] sendBytes;
-				lock (secureFilter)
-				{
-					sendBytes = secureFilter.Encrypt (packet.ToBytes ());
-				}
+				sendBytes = packet.ToBytes ();
 
-				using (MemoryStream sendStream = new MemoryStream ())
+				lock (secureStream)
 				{
-					sendStream.Write (sendBytes, 0, sendBytes.Length);
-					sendStream.Write (BitConverter.GetBytes (Packet.FOOTER), 0, sizeof (long));
-
-					//begin send operation
-					lock (netStream)
-					{
-						sendBytes = sendStream.ToArray ();
-						netStream.Write (sendBytes, 0, sendBytes.Length);
-					}
+					secureStream.Write (sendBytes, 0, sendBytes.Length);
 				}
 
 				Sending = false;
 #if DEBUG
-				Console.WriteLine (DEBUG_TAG + " Finished sending");
+				Console.WriteLine (DEBUG_TAG + " Finished sending " + sendBytes.Length + "B");
 #endif
 			}
 		}
@@ -414,8 +368,9 @@ namespace Dullahan.Net
 
 		public void Disconnect()
 		{
-			if(netStream != null)
-				netStream.Close ();
+			if(secureStream != null)
+				secureStream.Close ();
+			netStream.Close ();
 			connection.Close();
 			Sending = Reading = false;
 			Disconnected = true;

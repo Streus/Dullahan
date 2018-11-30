@@ -124,7 +124,7 @@ namespace Dullahan
 				while (!client.HasPendingData ())
 				{
 #if DEBUG
-					Write (DEBUG_TAG + " waiting...", ConsoleColor.Gray);
+					Write (DEBUG_TAG + " Waiting...", ConsoleColor.DarkGray);
 					Thread.Sleep (250);
 #endif
 				}
@@ -134,7 +134,7 @@ namespace Dullahan
 					if (responses[i].Type == Packet.DataType.response)
 					{
 #if DEBUG
-						Write (DEBUG_TAG + " got response", ConsoleColor.Green);
+						Write (DEBUG_TAG + " Got response", ConsoleColor.Green);
 #endif
 						int.TryParse (responses[i].Data, out commandResult);
 						return;
@@ -279,8 +279,6 @@ namespace Dullahan
 			try
 			{
 				client.Start ();
-				while (!client.HasPendingData ()) { }
-				Packet p = client.Read ()[0];
 			}
 			catch (Exception e)
 			{

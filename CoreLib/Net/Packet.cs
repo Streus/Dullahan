@@ -37,7 +37,7 @@ namespace Dullahan.Net
 		/// <param name="raw"></param>
 		/// <param name="packets">The deserialized packets</param>
 		/// <returns>Number of read bytes</returns>
-		public static int DeserializeAll(byte[] raw, out Packet[] packets)
+		public static int DeserializeAll (out Packet[] packets, byte[] raw)
 		{
 			int sk = 0;
 			List<Packet> pList = new List<Packet> ();
@@ -46,14 +46,15 @@ namespace Dullahan.Net
 				Packet p;
 				try
 				{
-					sk += Deserialize (raw, sk, out p);
+					sk += Deserialize (out p, raw, sk);
 					pList.Add (p);
 				}
-				catch (ArgumentException)
+				catch (ArgumentException ae)
 				{
 					//just be done?
 					//TODO figure out why there are hanging bytes on the ends of some packets
 #if DEBUG
+					Console.Error.WriteLine (TAG + " " + ae.ToString());
 					Console.Error.WriteLine (TAG + " Encountered hanging bytes: " + (raw.Length - sk) + "B");
 #endif
 					break;
@@ -62,29 +63,33 @@ namespace Dullahan.Net
 			packets = pList.ToArray ();
 			return sk;
 		}
-		private static int Deserialize(byte[] raw, int offset, out Packet packet)
+		private static int Deserialize(out Packet packet, byte[] source, int offset)
 		{
-			if (raw.Length - offset < MIN_PACKET_SIZE)
-				throw new ArgumentException ((raw.Length - offset) + "B is too small for a packet; must be >= " + MIN_PACKET_SIZE);
+			if (source.Length - offset < MIN_PACKET_SIZE)
+				throw new ArgumentException ((source.Length - offset) + "B is too small for a packet; must be >= " + MIN_PACKET_SIZE);
 
 			packet = new Packet ();
 
 			int seekPoint = offset;
 
 			//full packet length, 4 bytes
-			int fullSize = BitConverter.ToInt32 (raw, seekPoint);
+			int fullSize = BitConverter.ToInt32 (source, seekPoint);
 			seekPoint += sizeof (int);
 #if DEBUG
 			Console.WriteLine (TAG + " Deserializing packet of size " + fullSize + "B");
 #endif
+			byte[] raw = source;
 
 			//packet type, 4 bytes
 			packet.Type = (DataType)BitConverter.ToInt32 (raw, seekPoint);
 			seekPoint += sizeof (int);
 
-			//time stamp, 8 bytes
-			packet.timeStamp = new DateTime (BitConverter.ToInt64 (raw, seekPoint));
-			seekPoint += sizeof (long);
+			if (packet.Type == DataType.logentry)
+			{
+				//time stamp, 8 bytes
+				packet.timeStamp = new DateTime (BitConverter.ToInt64 (raw, seekPoint));
+				seekPoint += sizeof (long);
+			}
 
 			//tags count, 4 bytes
 			packet.tags = new string[BitConverter.ToInt32 (raw, seekPoint)];
@@ -106,19 +111,24 @@ namespace Dullahan.Net
 				seekPoint += sizeof (int);
 
 				//tag bytes, ? bytes
-				packet.tags[i] = Encoding.ASCII.GetString (raw, seekPoint, tagLength);
+				packet.tags[i] = Encoding.UTF8.GetString (raw, seekPoint, tagLength);
 				seekPoint += tagLength;
 			}
 
 			//data contents, ? bytes
-			packet.Data = Encoding.ASCII.GetString (raw, seekPoint, dataLength);
+			packet.Data = Encoding.UTF8.GetString (raw, seekPoint, dataLength);
 			seekPoint += dataLength;
 
 			//context contents, ? bytes
-			packet.Context = Encoding.ASCII.GetString (raw, seekPoint, contextLength);
+			packet.Context = Encoding.UTF8.GetString (raw, seekPoint, contextLength);
 			seekPoint += contextLength;
 
-			return seekPoint - offset;
+#if DEBUG
+			if (seekPoint - offset > fullSize)
+				Console.Error.WriteLine ("Deserialized more than packet size (" + (seekPoint - offset) + " > " + fullSize + ")");
+#endif
+
+				return fullSize;
 		}
 		#endregion
 
@@ -147,49 +157,57 @@ namespace Dullahan.Net
 		/// <returns></returns>
 		public virtual byte[] ToBytes()
 		{
-			List<byte> bytes = new List<byte> ();
-			//full packet length stub
-			bytes.AddRange (new byte[sizeof (int)]);
+			List<byte> byteList = new List<byte> ();
+
+			//full packet length stub (filled at the end)
+			byteList.AddRange (new byte[sizeof (int)]);
 
 			//packet type, 4 bytes
-			bytes.AddRange (BitConverter.GetBytes ((int)Type));
+			byteList.AddRange (BitConverter.GetBytes ((int)Type));
 
-			//time stamp, 8 bytes
-			bytes.AddRange (BitConverter.GetBytes (timeStamp.Ticks));
+			if (Type == DataType.logentry)
+			{
+				//time stamp, 8 bytes
+				byteList.AddRange (BitConverter.GetBytes (timeStamp.Ticks));
+			}
 
 			//tags count, 4 bytes
-			bytes.AddRange (BitConverter.GetBytes (tags.Length));
+			byteList.AddRange (BitConverter.GetBytes (tags.Length));
 
 			//data length, 4 bytes
-			byte[] dataB = Encoding.ASCII.GetBytes (Data);
-			bytes.AddRange (BitConverter.GetBytes (dataB.Length));
+			byte[] dataB = Encoding.UTF8.GetBytes (Data);
+			byteList.AddRange (BitConverter.GetBytes (dataB.Length));
 
 			//context length, 4 bytes
-			byte[] contextB = Encoding.ASCII.GetBytes (Context);
-			bytes.AddRange (BitConverter.GetBytes (contextB.Length));
+			byte[] contextB = Encoding.UTF8.GetBytes (Context);
+			byteList.AddRange (BitConverter.GetBytes (contextB.Length));
 
 			//individual tags, ? bytes
 			for (int i = 0; i < tags.Length; i++)
 			{
 				//tag, 4 bytes + ? bytes
-				byte[] tagB = Encoding.ASCII.GetBytes (tags[i]);
-				bytes.AddRange (BitConverter.GetBytes (tagB.Length));
-				bytes.AddRange (tagB);
+				byte[] tagB = Encoding.UTF8.GetBytes (tags[i]);
+				byteList.AddRange (BitConverter.GetBytes (tagB.Length));
+				byteList.AddRange (tagB);
 			}
 
 			//data ? bytes
-			bytes.AddRange (dataB);
+			byteList.AddRange (dataB);
 
 			//context ? bytes
-			bytes.AddRange (contextB);
+			byteList.AddRange (contextB);
 
-			byte[] fullSize = BitConverter.GetBytes (bytes.Count);
-			for (int i = 0; i < fullSize.Length; i++)
+			//send list to raw array
+			byte[] bytes = byteList.ToArray ();
+
+			//overwrite first four bytes with length of array
+			byte[] finalSizeB = BitConverter.GetBytes (bytes.Length);
+			for (int i = 0; i < finalSizeB.Length; i++)
 			{
-				bytes[i] = fullSize[i];
+				bytes[i] = finalSizeB[i];
 			}
 
-			return bytes.ToArray ();
+			return bytes;
 		}
 
 		public Message ToMessage()
