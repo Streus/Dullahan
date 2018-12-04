@@ -3,6 +3,7 @@ using Dullahan.Net;
 using System;
 using System.Net;
 using System.Reflection;
+using System.Security;
 using System.Threading;
 
 namespace Dullahan
@@ -309,6 +310,34 @@ namespace Dullahan
 			Console.ForegroundColor = color;
 			Console.WriteLine (text);
 			Console.ResetColor ();
+		}
+
+		/// <summary>
+		/// Read input from the user, masking and storing the data in a secure string
+		/// </summary>
+		/// <param name="prompt"></param>
+		/// <returns></returns>
+		private static SecureString ReadPassword(string prompt = "Enter password")
+		{
+			SecureString password = new SecureString ();
+			ConsoleKeyInfo key;
+
+			Console.Write (prompt + ":");
+			while ((key = Console.ReadKey(true)).Key != ConsoleKey.Enter)
+			{
+				if (key.Key != ConsoleKey.Backspace)
+				{
+					password.AppendChar (key.KeyChar);
+					Console.Write ("*");
+				}
+				else if (password.Length > 0)
+				{
+					password.RemoveAt (password.Length - 1);
+					Console.Write ("\b \b");
+				}
+			}
+			Console.WriteLine ();
+			return password;
 		}
 
 		#region INTERNAL_TYPES

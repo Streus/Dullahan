@@ -9,7 +9,6 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities;
 using Org.BouncyCastle.X509;
 using System;
-using System.Security;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Dullahan.Security
@@ -17,27 +16,18 @@ namespace Dullahan.Security
 	public class CertificateManager
 	{
 		#region STATIC_VARS
-		private const string CERT_STORE_NAME = "TrustedDullahan";
 
+		private const string CERT_STORE_NAME = "TrustedDullahan";
 		#endregion
 
 		#region INSTANCE_VARS
 
 		private X509Store trustedConnections;
-
-		public X509Certificate2 SelfCertificate
-		{
-			get
-			{
-				foreach (X509Certificate2 cert in trustedConnections.Certificates.Find (X509FindType.FindBySubjectName, Environment.UserName, true))
-					return cert;
-				return null;
-			}
-		}
 		#endregion
 
 		#region STATIC_METHODS
-		public static X509Certificate2 GenerateCertificate(string subjectName, SecureString password)
+
+		public static X509Certificate2 GenerateCertificate(string subjectName)
 		{
 			X509V3CertificateGenerator certGen = new X509V3CertificateGenerator ();
 			SecureRandom random = new SecureRandom (new CryptoApiRandomGenerator ());
@@ -72,15 +62,12 @@ namespace Dullahan.Security
 			//extensions
 			SubjectKeyIdentifier subKeyIdent = new SubjectKeyIdentifier (SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo (subjectKeyPair.Public));
 			certGen.AddExtension (X509Extensions.SubjectKeyIdentifier, true, subKeyIdent);
+			certGen.AddExtension (X509Extensions.ExtendedKeyUsage, true, new ExtendedKeyUsage(new KeyPurposeID[] { KeyPurposeID.AnyExtendedKeyUsage }));
 
 			//generate
 			Org.BouncyCastle.X509.X509Certificate bouncyCert = certGen.Generate (sigFactory);
 
-			//storage
-			X509KeyStorageFlags keyStorageFlags = X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.UserKeySet;
-
-			return new X509Certificate2 (DotNetUtilities.ToX509Certificate (bouncyCert).Export (X509ContentType.Cert), password, keyStorageFlags);
-
+			return new X509Certificate2 (DotNetUtilities.ToX509Certificate (bouncyCert).Export (X509ContentType.Cert));
 		}
 		#endregion
 
@@ -91,7 +78,50 @@ namespace Dullahan.Security
 			trustedConnections = new X509Store (CERT_STORE_NAME, StoreLocation.CurrentUser);
 			trustedConnections.Open (OpenFlags.ReadWrite);
 		}
-		
+
+		~CertificateManager()
+		{
+			trustedConnections.Close ();
+		}
+
+		/// <summary>
+		/// Identifies this Dullahan instance to other instances
+		/// </summary>
+		public X509Certificate2Collection GetSelfCertificate()
+		{
+			X509Certificate2Collection certs = trustedConnections.Certificates
+				.Find (X509FindType.FindBySubjectName, Environment.UserDomainName + "/" + Environment.UserName, true);
+
+			if (certs == null)
+			{
+				//existing cert not found, generate a new one
+				certs = new X509Certificate2Collection ();
+				X509Certificate2 newSelfCert = GenerateCertificate (Environment.UserDomainName + "/" + Environment.UserName);
+				trustedConnections.Add (newSelfCert);
+				certs.Add (newSelfCert);
+			}
+			return certs;
+		}
+
+		/// <summary>
+		/// Save a certificate as a trusted identity
+		/// </summary>
+		/// <param name="certificate"></param>
+		public void AddToTrusted(X509Certificate2 certificate)
+		{
+			trustedConnections.Add (certificate);
+		}
+
+		/// <summary>
+		/// Check a certificate to see if it was previously trusted
+		/// </summary>
+		/// <param name="certificate"></param>
+		/// <returns></returns>
+		public bool isTrusted(X509Certificate2 certificate)
+		{
+			return trustedConnections.Certificates.Contains (certificate);
+		}
+
 		#endregion
 	}
 }

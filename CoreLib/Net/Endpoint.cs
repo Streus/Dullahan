@@ -1,4 +1,5 @@
 ﻿using Dullahan.Logging;
+using Dullahan.Security;
 using System;
 using System.IO;
 using System.Net;
@@ -33,6 +34,8 @@ namespace Dullahan.Net
 
 		private TcpClient connection;
 		private NetworkStream netStream;
+
+		private CertificateManager certManager;
 
 		public bool Encrypted
 		{
@@ -157,6 +160,8 @@ namespace Dullahan.Net
 			readingCount = 0;
 			sendingCount = 0;
 			secureStream = null;
+
+			certManager = new CertificateManager ();
 		}
 
 		/// <summary>
@@ -183,7 +188,7 @@ namespace Dullahan.Net
 				{
 					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
-					secureStream.AuthenticateAsClient (address.ToString (), null/* TODO client certs*/, true);
+					secureStream.AuthenticateAsClient (address.ToString (), certManager.GetSelfCertificate(), true);
 				}
 				catch (AuthenticationException ae)
 				{
@@ -208,7 +213,7 @@ namespace Dullahan.Net
 			{
 				secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
-				secureStream.AuthenticateAsServer (null/* TODO Server certs*/, true, true);
+				secureStream.AuthenticateAsServer (certManager.GetSelfCertificate ()[0], true, true);
 			}
 			catch (AuthenticationException ae)
 			{
@@ -224,8 +229,8 @@ namespace Dullahan.Net
 
 		private bool ValidateRemoteCert(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors errors)
 		{
-			if (errors == SslPolicyErrors.None)
-				return true;
+			if(certManager.isTrusted(cert))
+
 #if DEBUG
 			Console.Error.WriteLine("Server validation error: " + errors);
 #endif
