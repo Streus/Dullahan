@@ -116,6 +116,7 @@ namespace Dullahan.Net
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
 		private SslStream secureStream;
+		private VerifyTrustCallback verifyTrust;
 
 		/// <summary>
 		/// Triggers when a read operation has finished, and data is available for use
@@ -160,6 +161,7 @@ namespace Dullahan.Net
 			readingCount = 0;
 			sendingCount = 0;
 			secureStream = null;
+			verifyTrust = null;
 
 			certManager = new CertificateManager ();
 		}
@@ -168,8 +170,9 @@ namespace Dullahan.Net
 		/// Begins a client connection.
 		/// </summary>
 		/// <exception cref="AuthenticationException"/>
-		public void Start()
+		public void Start(VerifyTrustCallback callback)
 		{
+			verifyTrust = callback;
 			if (!Connected)
 			{
 				//establish connection
@@ -189,6 +192,10 @@ namespace Dullahan.Net
 					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
 					secureStream.AuthenticateAsClient (address.ToString (), certManager.GetSelfCertificate(), true);
+					if (!secureStream.IsMutuallyAuthenticated)
+					{
+						throw new AuthenticationException ("Not mutually authenticated!");
+					}
 				}
 				catch (AuthenticationException ae)
 				{
@@ -207,13 +214,18 @@ namespace Dullahan.Net
 		/// <summary>
 		/// Begins a server connection. Counterpart to Start().
 		/// </summary>
-		public void Accept(bool useEncryption)
+		public void Accept(bool useEncryption, VerifyTrustCallback callback)
 		{
+			verifyTrust = callback;
 			try
 			{
 				secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
 				secureStream.AuthenticateAsServer (certManager.GetSelfCertificate ()[0], true, true);
+				if (!secureStream.IsMutuallyAuthenticated)
+				{
+					throw new AuthenticationException ("Not mutually authenticated!");
+				}
 			}
 			catch (AuthenticationException ae)
 			{
@@ -229,10 +241,24 @@ namespace Dullahan.Net
 
 		private bool ValidateRemoteCert(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors errors)
 		{
-			if(certManager.isTrusted(cert))
+			X509Certificate2 fullCert = new X509Certificate2 (cert);
+			if (certManager.isTrusted (fullCert))
+			{
+				return true;
+			}
 
+			bool addToTrusted;
+			if (verifyTrust (out addToTrusted, fullCert, (IPEndPoint)connection.Client.RemoteEndPoint))
+			{
+				verifyTrust = null;
+				if (addToTrusted)
+					certManager.AddToTrusted (fullCert);
+				return true;
+			}
 #if DEBUG
-			Console.Error.WriteLine("Server validation error: " + errors);
+			Console.Error.WriteLine (DEBUG_TAG + " " + cert.Subject + " is not trusted, and trust was not granted");
+			if (errors != SslPolicyErrors.None)
+				Console.Error.WriteLine(DEBUG_TAG + " Server validation error: " + errors);
 #endif
 			return false;
 		}
@@ -454,6 +480,7 @@ namespace Dullahan.Net
 		}
 
 		public delegate void DataReceivedCallback(Endpoint endpoint, Packet data);
+		public delegate bool VerifyTrustCallback(out bool addToTrusted, X509Certificate2 certificate, IPEndPoint endpointInfo);
 		#endregion
 	}
 }

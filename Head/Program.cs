@@ -4,6 +4,7 @@ using System;
 using System.Net;
 using System.Reflection;
 using System.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace Dullahan
@@ -279,7 +280,47 @@ namespace Dullahan
 			client = new Endpoint (addr, port);
 			try
 			{
-				client.Start ();
+				client.Start ((out bool addTotrusted, X509Certificate2 cert, IPEndPoint remote) => {
+					Write ("Connecting to an unknown host!", ConsoleColor.Yellow);
+
+					Console.WriteLine ("IP: " + remote.Address + ":" + remote.Port);
+					Console.WriteLine ("OS User: " + cert.Subject);
+
+					bool allow = false;
+					while (!allow)
+					{
+						Console.Write ("Allow connect? (y/n): ");
+						switch (Console.ReadKey ().Key)
+						{
+						case ConsoleKey.Y:
+							allow = true;
+							break;
+						case ConsoleKey.N:
+							addTotrusted = false;
+							return false;
+						default:
+							Console.WriteLine ("\nPlease Enter y or n.");
+							break;
+						}
+					}
+
+					while (true)
+					{
+						Console.Write ("Add to list of trusted hosts? (y/n): ");
+						switch (Console.ReadKey ().Key)
+						{
+						case ConsoleKey.Y:
+							addTotrusted = true;
+							return true;
+						case ConsoleKey.N:
+							addTotrusted = false;
+							return true;
+						default:
+							Console.WriteLine ("\nPlease Enter y or n.");
+							break;
+						}
+					}
+				});
 			}
 			catch (Exception e)
 			{

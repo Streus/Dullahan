@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using UnityEngine;
 
 [assembly: CommandProvider]
@@ -172,8 +173,27 @@ namespace Dullahan.Net
 		{
 			try
 			{
+				if (connectionPolicy == ConnectionPolicy.AskFirst)
+				{
+					//TODO ask if can go ahead with connecting
+					return;
+				}
+
 				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
-				c.Accept (useEncryption);
+				c.Accept (useEncryption, (out bool addTotrusted, X509Certificate2 cert, IPEndPoint client) => {
+					addTotrusted = false; //TODO
+					switch (connectionPolicy)
+					{
+					case ConnectionPolicy.AcceptAll:
+						return true;
+					case ConnectionPolicy.AskForNew:
+						//TODO ask user on new connection
+						break;
+					case ConnectionPolicy.DenyAll:
+						return false;
+					}
+					return false;
+				});
 				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
 				c.dataRead += DataReceived;
 				c.Flow = Endpoint.FlowState.bidirectional;
@@ -304,9 +324,24 @@ namespace Dullahan.Net
 
 		public enum ConnectionPolicy
 		{
+			/// <summary>
+			/// All incoming connections will be accepted, trusted or not
+			/// </summary>
 			AcceptAll,
+
+			/// <summary>
+			/// All incoming connections require confirmation, trusted or not
+			/// </summary>
 			AskFirst,
+
+			/// <summary>
+			/// Incoming connections from untrusted sources will prompt user for confirmation before connecting
+			/// </summary>
 			AskForNew,
+
+			/// <summary>
+			/// All incoming connections will be rejected, regardless of trust
+			/// </summary>
 			DenyAll
 		}
 		#endregion

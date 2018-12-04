@@ -12,7 +12,7 @@ namespace Dullahan.Test.Security
 		[TestMethod]
 		public void Test_GenerateBasicCertificate()
 		{
-			X509Certificate2 cert = CertificateManager.GenerateCertificate ("DullahanTest", new SecureString ());
+			X509Certificate2 cert = CertificateManager.GenerateCertificate ("DullahanTest");
 			Assert.IsNotNull (cert);
 			Assert.AreNotEqual (Convert.ToBase64String (cert.GetPublicKey ()), "");
 			Console.WriteLine (cert.ToString ());
