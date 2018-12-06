@@ -261,7 +261,12 @@ namespace Dullahan.Net
 			/// <summary>
 			/// A prompted or unpropmted transmission of data to a client
 			/// </summary>
-			logentry
+			logentry,
+
+			/// <summary>
+			/// A collection of settings that are shared between client and server
+			/// </summary>
+			settings
 		}
 	}
 }

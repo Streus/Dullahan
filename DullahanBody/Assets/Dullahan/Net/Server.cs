@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using UnityEngine;
 
 [assembly: CommandProvider]
@@ -209,6 +210,13 @@ namespace Dullahan.Net
 				Debug.Log (TAG + " Added new client.\nName: " + c.Name + "\nHost: " + c.ToString () + "\nEnv: " + u.Environment.ToString ());
 #endif
 				c.ReadAsync ();
+			}
+			catch (ThreadInterruptedException tie)
+			{
+				Debug.LogWarning (TAG + " Stopped accepting connections");
+#if DEBUG
+				Debug.LogException (tie);
+#endif
 			}
 			catch (Exception e)
 			{

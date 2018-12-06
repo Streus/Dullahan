@@ -3,12 +3,14 @@ using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Operators;
+using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Prng;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities;
 using Org.BouncyCastle.X509;
 using System;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Dullahan.Security
@@ -54,7 +56,7 @@ namespace Dullahan.Security
 			certGen.SetIssuerDN (subject);
 
 			//validity
-			DateTime now = DateTime.UtcNow.Date;
+			DateTime now = DateTime.UtcNow.Date.AddDays(-1);
 			DateTime then = now.AddYears (1);
 			certGen.SetNotBefore (now);
 			certGen.SetNotAfter (then);
@@ -66,8 +68,16 @@ namespace Dullahan.Security
 
 			//generate
 			Org.BouncyCastle.X509.X509Certificate bouncyCert = certGen.Generate (sigFactory);
+			X509Certificate2 finalCert = new X509Certificate2 (DotNetUtilities.ToX509Certificate (bouncyCert).Export(X509ContentType.Cert));
 
-			return new X509Certificate2 (DotNetUtilities.ToX509Certificate (bouncyCert).Export (X509ContentType.Cert));
+			//attach private key
+			RSA rawPrivateKey = DotNetUtilities.ToRSA(subjectKeyPair.Private as RsaPrivateCrtKeyParameters);
+			CspParameters container = new CspParameters () { KeyContainerName = "Dullahan:" + subjectName };
+			RSACryptoServiceProvider privateKey = new RSACryptoServiceProvider (container);
+			privateKey.ImportParameters (rawPrivateKey.ExportParameters(true));
+			finalCert.PrivateKey = privateKey;
+
+			return finalCert;
 		}
 		#endregion
 
@@ -92,7 +102,7 @@ namespace Dullahan.Security
 			X509Certificate2Collection certs = trustedConnections.Certificates
 				.Find (X509FindType.FindBySubjectName, Environment.UserDomainName + "/" + Environment.UserName, true);
 
-			if (certs == null)
+			if (certs == null || certs.Count < 1)
 			{
 				//existing cert not found, generate a new one
 				certs = new X509Certificate2Collection ();
