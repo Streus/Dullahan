@@ -1,6 +1,7 @@
 ﻿using Dullahan.Env;
 using Dullahan.Net;
 using System;
+using Dullahan.Security;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
@@ -25,15 +26,11 @@ namespace Dullahan
 		#region INSTANCE_VARS
 
 		public string Name { get; private set; }
-
-		private char[] password;
-		private bool passwordProtected;
-
+		public string Password { get; private set; }
 		public Permission permissions { get; set; }
 
 		public Executor Environment { get; private set; } //TODO serialize variables?
-
-		public Endpoint Host { get; set; }
+		public Connection Host { get; private set; }
 		#endregion
 
 		#region STATIC_METHODS
@@ -43,8 +40,9 @@ namespace Dullahan
 		/// </summary>
 		/// <param name="name"></param>
 		/// <param name="password"></param>
+		/// <param name="connection"></param>
 		/// <returns></returns>
-		public static User Load(string name)
+		public static User Load(string name, string password, Connection connection)
 		{
 			if (!Directory.Exists (RegistryPath))
 			{
@@ -70,6 +68,7 @@ namespace Dullahan
 			BinaryFormatter formatter = new BinaryFormatter ();
 			User u = (User)formatter.Deserialize (userFile);
 			userFile.Close ();
+			u.Host = connection;
 
 			//HACK temporarily make an env for users
 			u.Environment = Executor.Build (u.Name);
@@ -107,8 +106,7 @@ namespace Dullahan
 		private User()
 		{
 			Name = "";
-			password = null;
-			passwordProtected = false;
+			Password = "";
 
 			permissions = Permission.none;
 			Environment = null;
@@ -116,16 +114,14 @@ namespace Dullahan
 		private User(SerializationInfo info, StreamingContext context)
 		{
 			Name = info.GetString ("name");
-			password = (char[])info.GetValue ("psswd", typeof(char[]));
-			passwordProtected = info.GetBoolean ("psswdprot");
+			Password = info.GetString ("psswd");
 			permissions = (Permission)info.GetValue ("permis", typeof(Permission));
 		}
 
 		public void GetObjectData(SerializationInfo info, StreamingContext context)
 		{
 			info.AddValue ("name", Name);
-			info.AddValue ("psswd", password);
-			info.AddValue ("psswdprot", passwordProtected);
+			info.AddValue ("psswd", Password);
 			info.AddValue ("permis", permissions);
 			//TODO user environment serialization
 		}

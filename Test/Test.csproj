@@ -59,10 +59,10 @@
   </Choose>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Security\CertificateManagerTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Net\" />
+    <Folder Include="Security\" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CoreLib\Core.csproj">

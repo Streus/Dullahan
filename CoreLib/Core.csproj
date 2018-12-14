@@ -34,10 +34,6 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="BouncyCastle.Crypto, Version=1.8.4.0, Culture=neutral, PublicKeyToken=0e99375e54769942">
-      <HintPath>..\packages\BouncyCastle.1.8.4\lib\BouncyCastle.Crypto.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -57,20 +53,19 @@
     <Compile Include="Logging\ILogWriter.cs" />
     <Compile Include="Logging\Log.cs" />
     <Compile Include="Logging\Message.cs" />
-    <Compile Include="Net\Endpoint.cs" />
+    <Compile Include="Net\Connection.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Env\Executor.cs" />
-    <Compile Include="Security\CertificateManager.cs" />
+    <Compile Include="Security\Identity.cs" />
+    <Compile Include="Security\IdentityRepository.cs" />
     <Compile Include="User.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>mkdir "$(SolutionDir)\DullahanBody\Assets\$(SolutionName)"
-copy /Y "$(TargetDir)$(TargetName)*" "$(SolutionDir)\DullahanBody\Assets\$(SolutionName)\"</PostBuildEvent>
+copy /Y "$(TargetDir)$(TargetFileName)*" "$(SolutionDir)\DullahanBody\Assets\$(SolutionName)\"</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

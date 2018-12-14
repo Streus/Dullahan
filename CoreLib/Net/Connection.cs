@@ -6,7 +6,6 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -16,7 +15,7 @@ namespace Dullahan.Net
 	/// <summary>
 	/// Manages the connection to a Dullahan server/client
 	/// </summary>
-	public class Endpoint : ILogWriter, ILogReader
+	public class Connection : ILogWriter, ILogReader
 	{
 		#region STATIC_VARS
 
@@ -32,28 +31,16 @@ namespace Dullahan.Net
 		private IPAddress address;
 		private int port;
 
-		private TcpClient connection;
+		private TcpClient tcpClient;
 		private NetworkStream netStream;
 
-		private CertificateManager certManager;
-
-		public bool Encrypted
-		{
-			get { return secureStream != null && secureStream.IsEncrypted; }
-		}
-
-		/// <summary>
-		/// Public key of the other side connected to this endpoint
-		/// </summary>
-		public string ConnectionIdentity
-		{
-			get { return secureStream?.RemoteCertificate.GetPublicKeyString(); }
-		}
+		private Identity identity;
+		private Identity otherIdentity;
 
 		/// <summary>
 		/// Connected to the remote host.
 		/// </summary>
-		public bool Connected { get { return connection != null && connection.Connected; } }
+		public bool Connected { get { return tcpClient != null && tcpClient.Connected; } }
 
 		private object stateMutex = new object ();
 
@@ -115,9 +102,6 @@ namespace Dullahan.Net
 		/// </summary>
 		public FlowState Flow { get; set; } = FlowState.bidirectional;
 
-		private SslStream secureStream;
-		private VerifyTrustCallback verifyTrust;
-
 		/// <summary>
 		/// Triggers when a read operation has finished, and data is available for use
 		/// </summary>
@@ -135,35 +119,33 @@ namespace Dullahan.Net
 		/// </summary>
 		/// <param name="address"></param>
 		/// <param name="port"></param>
-		public Endpoint(IPAddress address, int port = DEFAULT_PORT) : this()
+		public Connection(IPAddress address, int port = DEFAULT_PORT) : this()
 		{
 			this.address = address;
 			this.port = port;
 
-			connection = new TcpClient ();
+			tcpClient = new TcpClient ();
 		}
 
 		/// <summary>
 		/// Create a new Endpoint with an existing and connected TcpClient
 		/// </summary>
 		/// <param name="existingClient"></param>
-		public Endpoint(TcpClient existingClient) : this()
+		public Connection(TcpClient existingClient) : this()
 		{
 			address = null;
 			port = -1;
 
-			connection = existingClient;
-			netStream = connection.GetStream ();
+			tcpClient = existingClient;
+			netStream = tcpClient.GetStream ();
 		}
 
-		private Endpoint()
+		private Connection()
 		{
 			readingCount = 0;
 			sendingCount = 0;
-			secureStream = null;
-			verifyTrust = null;
-
-			certManager = new CertificateManager ();
+			identity = new Identity ();
+			otherIdentity = null;
 		}
 
 		/// <summary>
@@ -172,33 +154,24 @@ namespace Dullahan.Net
 		/// <exception cref="AuthenticationException"/>
 		public void Start(VerifyTrustCallback callback)
 		{
-			verifyTrust = callback;
 			if (!Connected)
 			{
 				//establish connection
-				connection.Connect (address, port);
-				netStream = connection.GetStream ();
+				tcpClient.Connect (address, port);
+				netStream = tcpClient.GetStream ();
 
-				try
+				Send (new Packet (Packet.DataType.settings, identity.ToString ()));
+				if (WaitForData (TimeSpan.FromSeconds (10)))
 				{
-					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
-
-					secureStream.AuthenticateAsClient (address.ToString (), certManager.GetSelfCertificate (), true);
-					if (!secureStream.IsMutuallyAuthenticated)
-					{
-						throw new AuthenticationException ("Not mutually authenticated!");
-					}
+					Packet p = Read ()[0];
+					otherIdentity = new Identity (p.Data);
 				}
-				catch (AuthenticationException ae)
+
+				bool addToTrusted;
+				if (callback (out addToTrusted, identity, (IPEndPoint)tcpClient.Client.RemoteEndPoint))
 				{
-					//authentication failed
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.Error.WriteLine ("Authentication with " + address + " failed");
-					Console.Error.WriteLine ("Cause: " + ae.Message);
-					Console.ResetColor ();
-					connection.Close ();
-					Disconnected = true;
-					return;
+					if (!addToTrusted)
+						identity.Drop ();
 				}
 			}
 		}
@@ -206,58 +179,31 @@ namespace Dullahan.Net
 		/// <summary>
 		/// Begins a server connection. Counterpart to Start().
 		/// </summary>
-		public void Accept(bool useSsl, VerifyTrustCallback callback)
+		public void Accept(VerifyTrustCallback callback)
 		{
-			verifyTrust = callback;
-			try
-			{
-				secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
-				secureStream.AuthenticateAsServer (certManager.GetSelfCertificate ()[0], true, SslProtocols.Tls, false);
-				if (!secureStream.IsMutuallyAuthenticated)
-				{
-					throw new AuthenticationException ("Not mutually authenticated!");
-				}
-			}
-			catch (AuthenticationException ae)
-			{
-				//authentication failed
-				Console.Error.WriteLine ("Authentication with "
-					+ ((IPEndPoint)connection.Client.RemoteEndPoint).Address + " failed\n"
-					+ "Cause: " + ae.Message);
-				connection.Close ();
-				Disconnected = true;
-				return;
-			}
-		}
-
-		private bool ValidateRemoteCert(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors errors)
-		{
-			X509Certificate2 fullCert = new X509Certificate2 (cert);
-			if (certManager.isTrusted (fullCert))
-			{
-				return true;
-			}
-
-			bool addToTrusted;
-			if (verifyTrust (out addToTrusted, fullCert, (IPEndPoint)connection.Client.RemoteEndPoint))
-			{
-				verifyTrust = null;
-				if (addToTrusted)
-					certManager.AddToTrusted (fullCert);
-				return true;
-			}
-#if DEBUG
-			Console.Error.WriteLine (DEBUG_TAG + " " + cert.Subject + " is not trusted, and trust was not granted");
-			if (errors != SslPolicyErrors.None)
-				Console.Error.WriteLine(DEBUG_TAG + " Server validation error: " + errors);
-#endif
-			return false;
 		}
 
 		public bool HasPendingData()
 		{
 			return netStream != null && netStream.DataAvailable;
+		}
+
+		/// <summary>
+		/// Waits for data to be pending read. Returns true if data is pending, false if
+		/// timeout was reached before any data was recieved.
+		/// </summary>
+		/// <param name="timeout"></param>
+		/// <returns></returns>
+		public bool WaitForData(TimeSpan timeout = default(TimeSpan))
+		{
+			DateTime start = DateTime.Now;
+			while (timeout == default (TimeSpan) || DateTime.Now - start < timeout)
+			{
+				if (HasPendingData ())
+					return true;
+			}
+			return false;
 		}
 
 		/// <summary>
@@ -278,7 +224,7 @@ namespace Dullahan.Net
 				lock (netStream)
 				{
 					using (MemoryStream readingStream = new MemoryStream ())
-					using (BinaryReader reader = new BinaryReader (secureStream, Encoding.UTF8, true))
+					using (BinaryReader reader = new BinaryReader (netStream, Encoding.UTF8, true))
 					{
 						byte[] buffer = new byte[1024];
 						int byteC;
@@ -358,9 +304,9 @@ namespace Dullahan.Net
 				byte[] sendBytes;
 				sendBytes = packet.ToBytes ();
 
-				lock (secureStream)
+				lock (netStream)
 				{
-					secureStream.Write (sendBytes, 0, sendBytes.Length);
+					netStream.Write (sendBytes, 0, sendBytes.Length);
 				}
 
 				Sending = false;
@@ -392,10 +338,8 @@ namespace Dullahan.Net
 
 		public void Disconnect()
 		{
-			if(secureStream != null)
-				secureStream.Close ();
 			netStream.Close ();
-			connection.Close();
+			tcpClient.Close();
 			Sending = Reading = false;
 			Disconnected = true;
 			Flow = FlowState.none;
@@ -411,13 +355,13 @@ namespace Dullahan.Net
 
 		public override bool Equals(object obj)
 		{
-			return Name.Equals(((Endpoint)obj).Name);
+			return Name.Equals(((Connection)obj).Name);
 		}
 
 		public override string ToString()
 		{
-			string str = nameof (Endpoint) + "(";
-			IPEndPoint endpointInfo = (IPEndPoint)connection.Client.RemoteEndPoint;
+			string str = nameof (Connection) + "(";
+			IPEndPoint endpointInfo = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
 			str += endpointInfo.Address + ":" + endpointInfo.Port + ")";
 
 			return str;
@@ -471,8 +415,8 @@ namespace Dullahan.Net
 			bidirectional = outgoing | incoming
 		}
 
-		public delegate void DataReceivedCallback(Endpoint endpoint, Packet data);
-		public delegate bool VerifyTrustCallback(out bool addToTrusted, X509Certificate2 certificate, IPEndPoint endpointInfo);
+		public delegate void DataReceivedCallback(Connection endpoint, Packet data);
+		public delegate bool VerifyTrustCallback(out bool addToTrusted, Identity identity, IPEndPoint endpointInfo);
 		#endregion
 	}
 }

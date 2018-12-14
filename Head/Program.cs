@@ -37,7 +37,7 @@ namespace Dullahan
 		#region STATIC_VARS
 
 		private static Executor env;
-		private static Endpoint client;
+		private static Connection client;
 		private static ConsoleRedirector redir;
 
 		private static IPAddress addr;
@@ -57,7 +57,7 @@ namespace Dullahan
 			env.SetInput (redir);
 
 			Connect ();
-			client.Flow = Endpoint.FlowState.outgoing;
+			client.Flow = Connection.FlowState.outgoing;
 
 			//verify connection
 			while (client.Connected)
@@ -80,11 +80,11 @@ namespace Dullahan
 				if (commandResult == Executor.EXEC_NOTFOUND)
 				{
 					client.Send (new Packet (Packet.DataType.command, input));
-					client.Flow = Endpoint.FlowState.incoming;
+					client.Flow = Connection.FlowState.incoming;
 
 					HandleResponses (ref commandResult);
 
-					client.Flow = Endpoint.FlowState.outgoing;
+					client.Flow = Connection.FlowState.outgoing;
 				}
 
 				//some failure occured
@@ -164,7 +164,7 @@ namespace Dullahan
 			//default values
 			string ip = "127.0.0.1";
 			IPAddress.TryParse (ip, out addr);
-			port = Endpoint.DEFAULT_PORT;
+			port = Connection.DEFAULT_PORT;
 			execMode = ExecutionMode.listen;
 
 			if (args.Length <= 0)
@@ -277,7 +277,7 @@ namespace Dullahan
 		private static void Connect()
 		{
 			//start tcp client
-			client = new Endpoint (addr, port);
+			client = new Connection (addr, port);
 			try
 			{
 				client.Start ((out bool addTotrusted, X509Certificate2 cert, IPEndPoint remote) => {
