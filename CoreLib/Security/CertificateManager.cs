@@ -18,13 +18,14 @@ namespace Dullahan.Security
 	public class CertificateManager
 	{
 		#region STATIC_VARS
+		private const string TAG = "[CRTMNG]";
 
 		private const string CERT_STORE_NAME = "TrustedDullahan";
+
+		private const int KEY_SIZE = 512;
 		#endregion
 
 		#region INSTANCE_VARS
-
-		private X509Store trustedConnections;
 		#endregion
 
 		#region STATIC_METHODS
@@ -35,7 +36,7 @@ namespace Dullahan.Security
 			SecureRandom random = new SecureRandom (new CryptoApiRandomGenerator ());
 
 			//generate subject keypair
-			KeyGenerationParameters keyGenParams = new KeyGenerationParameters (random, 2048);
+			KeyGenerationParameters keyGenParams = new KeyGenerationParameters (random, KEY_SIZE);
 			RsaKeyPairGenerator kpGen = new RsaKeyPairGenerator ();
 			kpGen.Init (keyGenParams);
 			AsymmetricCipherKeyPair subjectKeyPair = kpGen.GenerateKeyPair ();
@@ -71,8 +72,8 @@ namespace Dullahan.Security
 			X509Certificate2 finalCert = new X509Certificate2 (DotNetUtilities.ToX509Certificate (bouncyCert).Export(X509ContentType.Cert));
 
 			//attach private key
-			RSA rawPrivateKey = DotNetUtilities.ToRSA(subjectKeyPair.Private as RsaPrivateCrtKeyParameters);
-			CspParameters container = new CspParameters () { KeyContainerName = "Dullahan:" + subjectName };
+			RSA rawPrivateKey = DotNetUtilities.ToRSA((RsaPrivateCrtKeyParameters)subjectKeyPair.Private);
+			CspParameters container = new CspParameters () { KeyContainerName = "Dullahan/" + subjectName };
 			RSACryptoServiceProvider privateKey = new RSACryptoServiceProvider (container);
 			privateKey.ImportParameters (rawPrivateKey.ExportParameters(true));
 			finalCert.PrivateKey = privateKey;
@@ -85,13 +86,7 @@ namespace Dullahan.Security
 
 		public CertificateManager()
 		{
-			trustedConnections = new X509Store (CERT_STORE_NAME, StoreLocation.CurrentUser);
-			trustedConnections.Open (OpenFlags.ReadWrite);
-		}
-
-		~CertificateManager()
-		{
-			trustedConnections.Close ();
+			
 		}
 
 		/// <summary>
@@ -99,16 +94,25 @@ namespace Dullahan.Security
 		/// </summary>
 		public X509Certificate2Collection GetSelfCertificate()
 		{
-			X509Certificate2Collection certs = trustedConnections.Certificates
-				.Find (X509FindType.FindBySubjectName, Environment.UserDomainName + "/" + Environment.UserName, true);
-
-			if (certs == null || certs.Count < 1)
+			X509Certificate2Collection certs;
+			using (X509Store trustedConnections = new X509Store (CERT_STORE_NAME, StoreLocation.CurrentUser))
 			{
-				//existing cert not found, generate a new one
-				certs = new X509Certificate2Collection ();
-				X509Certificate2 newSelfCert = GenerateCertificate (Environment.UserDomainName + "/" + Environment.UserName);
-				trustedConnections.Add (newSelfCert);
-				certs.Add (newSelfCert);
+				trustedConnections.Open (OpenFlags.ReadWrite);
+				certs = trustedConnections.Certificates
+					.Find (X509FindType.FindBySubjectName, Environment.UserDomainName + "/" + Environment.UserName, true);
+
+				if (certs == null || certs.Count < 1)
+				{
+					//existing cert not found, generate a new one
+					certs = new X509Certificate2Collection ();
+					X509Certificate2 newSelfCert = GenerateCertificate (Environment.UserDomainName + "/" + Environment.UserName);
+#if DEBUG
+					Console.WriteLine (TAG + " Generated new cert for \"" + Environment.UserDomainName + "/" + Environment.UserName + "\"");
+					Console.WriteLine (TAG + " Certificate: \n" + newSelfCert.ToString (true));
+#endif
+					trustedConnections.Add (newSelfCert);
+					certs.Add (newSelfCert);
+				}
 			}
 			return certs;
 		}
@@ -119,7 +123,11 @@ namespace Dullahan.Security
 		/// <param name="certificate"></param>
 		public void AddToTrusted(X509Certificate2 certificate)
 		{
-			trustedConnections.Add (certificate);
+			using (X509Store trustedConnections = new X509Store (CERT_STORE_NAME, StoreLocation.CurrentUser))
+			{
+				trustedConnections.Open (OpenFlags.ReadWrite);
+				trustedConnections.Add (certificate);
+			}
 		}
 
 		/// <summary>
@@ -129,7 +137,13 @@ namespace Dullahan.Security
 		/// <returns></returns>
 		public bool isTrusted(X509Certificate2 certificate)
 		{
-			return trustedConnections.Certificates.Contains (certificate);
+			bool trusted;
+			using (X509Store trustedConnections = new X509Store (CERT_STORE_NAME, StoreLocation.CurrentUser))
+			{
+				trustedConnections.Open (OpenFlags.ReadOnly);
+				trusted = trustedConnections.Certificates.Contains (certificate);
+			}
+			return trusted;
 		}
 
 		#endregion

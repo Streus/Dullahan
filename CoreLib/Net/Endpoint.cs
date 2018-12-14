@@ -179,45 +179,26 @@ namespace Dullahan.Net
 				connection.Connect (address, port);
 				netStream = connection.GetStream ();
 
-				while (!HasPendingData ()) { }
-				Packet p = Read ()[0];
-				bool useSsl;
-				if (!bool.TryParse (p.Data.Split('=')[1], out useSsl))
+				try
 				{
-					//send error code to sever
-					Send (new Packet (Packet.DataType.response, "1"));
-					throw new Exception ("Received malformed encryption setting from server");
-				}
+					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
 
-				if (!useSsl)
+					secureStream.AuthenticateAsClient (address.ToString (), certManager.GetSelfCertificate (), true);
+					if (!secureStream.IsMutuallyAuthenticated)
+					{
+						throw new AuthenticationException ("Not mutually authenticated!");
+					}
+				}
+				catch (AuthenticationException ae)
 				{
-					//send ack to server and proceed without SSL
-					Send (new Packet (Packet.DataType.response, "0"));
+					//authentication failed
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.Error.WriteLine ("Authentication with " + address + " failed");
+					Console.Error.WriteLine ("Cause: " + ae.Message);
+					Console.ResetColor ();
+					connection.Close ();
+					Disconnected = true;
 					return;
-				}
-				else
-				{
-					try
-					{
-						secureStream = new SslStream (netStream, true, ValidateRemoteCert);
-
-						secureStream.AuthenticateAsClient (address.ToString (), certManager.GetSelfCertificate (), true);
-						if (!secureStream.IsMutuallyAuthenticated)
-						{
-							throw new AuthenticationException ("Not mutually authenticated!");
-						}
-					}
-					catch (AuthenticationException ae)
-					{
-						//authentication failed
-						Console.ForegroundColor = ConsoleColor.Red;
-						Console.Error.WriteLine ("Authentication with " + address + " failed");
-						Console.Error.WriteLine ("Cause: " + ae.Message);
-						Console.ResetColor ();
-						connection.Close ();
-						Disconnected = true;
-						return;
-					}
 				}
 			}
 		}
@@ -227,49 +208,26 @@ namespace Dullahan.Net
 		/// </summary>
 		public void Accept(bool useSsl, VerifyTrustCallback callback)
 		{
-			if (!useSsl)
+			verifyTrust = callback;
+			try
 			{
-				Send (new Packet (Packet.DataType.settings, "useSsl=" + useSsl.ToString ()));
-				while (!HasPendingData ()) { }
-				Packet resp = Read ()[0];
-				int errorCode;
-				if (int.TryParse (resp.Data, out errorCode))
+				secureStream = new SslStream (netStream, true, ValidateRemoteCert);
+
+				secureStream.AuthenticateAsServer (certManager.GetSelfCertificate ()[0], true, SslProtocols.Tls, false);
+				if (!secureStream.IsMutuallyAuthenticated)
 				{
-					if (errorCode == 0)
-						return;
-
-					Console.Error.WriteLine ("Client returned error code: " + resp.Data);
+					throw new AuthenticationException ("Not mutually authenticated!");
 				}
-
-				Console.Error.WriteLine ("Failed to share SSL setting; aborting...");
+			}
+			catch (AuthenticationException ae)
+			{
+				//authentication failed
+				Console.Error.WriteLine ("Authentication with "
+					+ ((IPEndPoint)connection.Client.RemoteEndPoint).Address + " failed\n"
+					+ "Cause: " + ae.Message);
 				connection.Close ();
 				Disconnected = true;
 				return;
-			}
-			else
-			//using SSL to auth and encrypt
-			{
-				verifyTrust = callback;
-				try
-				{
-					secureStream = new SslStream (netStream, true, ValidateRemoteCert);
-
-					secureStream.AuthenticateAsServer (certManager.GetSelfCertificate ()[0], true, SslProtocols.Tls, false);
-					if (!secureStream.IsMutuallyAuthenticated)
-					{
-						throw new AuthenticationException ("Not mutually authenticated!");
-					}
-				}
-				catch (AuthenticationException ae)
-				{
-					//authentication failed
-					Console.Error.WriteLine ("Authentication with "
-						+ ((IPEndPoint)connection.Client.RemoteEndPoint).Address + " failed\n"
-						+ "Cause: " + ae.Message);
-					connection.Close ();
-					Disconnected = true;
-					return;
-				}
 			}
 		}
 
