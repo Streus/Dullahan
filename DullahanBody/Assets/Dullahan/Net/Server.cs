@@ -3,10 +3,8 @@ using Dullahan.Logging;
 using Dullahan.Security;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using UnityEngine;
 
@@ -15,7 +13,7 @@ using UnityEngine;
 namespace Dullahan.Net
 {
 	/// <summary>
-	/// Handles communication between Dullhan Body (Unity side) and 
+	/// Handles Unity side of communication between Dullhan Body (Unity side) and 
 	/// Dullahan Head (CLI side).
 	/// </summary>
 	[CommandProvider]
@@ -202,6 +200,7 @@ namespace Dullahan.Net
 				});
 				c.Name = clientId.Name;
 				c.dataRead += DataReceived;
+				c.disconnected += ClientDisconnected;
 				c.Flow = Connection.FlowState.bidirectional;
 
 				//TODO ask for username and password
@@ -241,6 +240,9 @@ namespace Dullahan.Net
 				{
 					sp = pendingPackets.Dequeue();
 				}
+
+				if (sp.user.Host.Disconnected)
+					continue;
 
 				switch (sp.packet.Type)
 				{
@@ -306,14 +308,40 @@ namespace Dullahan.Net
 				source.ReadAsync ();
 		}
 
+		/// <summary>
+		/// Called when a client disconnects from the server
+		/// </summary>
+		/// <param name="connection"></param>
+		private void ClientDisconnected(Connection connection)
+		{
+			connection.dataRead -= DataReceived;
+			connection.disconnected -= ClientDisconnected;
+
+			for (int i = 0; i < users.Count; i++)
+			{
+				if (users[i].Host.Equals(connection))
+				{
+					lock (users)
+					{
+						users.Remove (users[i]);
+					}
+				}
+			}
+#if DEBUG
+			Debug.Log (TAG + " " + connection.Name + " disconnected");
+#endif
+		}
+
 		public void Stop()
 		{
 			running = false;
 			for (int i = 0; i < instance.users.Count; i++)
 			{
-				users[i].Host.Send (new Packet (Packet.DataType.command, "SERVER", "dulnet disconnect")); //TODO dulnet utility commands
-				users[i].Host.Disconnect ();
+				users[i].Host.Dispose ();
+				users[i] = null;
 			}
+
+			pendingPackets.Clear ();
 
 			server.Stop ();
 		}

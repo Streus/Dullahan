@@ -222,7 +222,7 @@ namespace Dullahan.Net
 			str += "Type: " + Type.ToString();
 
 			if(timeStamp != default(DateTime))
-				str += ", Time: " + timeStamp.ToString ();
+				str += ", Time: " + timeStamp.ToString ("yyyy/mm/dd HH:mm:ss");
 
 			if (tags.Length > 0)
 			{

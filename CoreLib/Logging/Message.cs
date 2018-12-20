@@ -26,7 +26,7 @@ namespace Dullahan.Logging
 		/// <summary>
 		/// List of tags applied to this message
 		/// </summary>
-		public HashSet<string> Tags { get; set; }
+		public HashSet<string> Tags { get; private set; }
 
 		/// <summary>
 		/// What was logged
@@ -92,7 +92,7 @@ namespace Dullahan.Logging
 			if(Context != "")
 				str = Context + " " + str;
 			if (includeTime && timeStamp != default(DateTime))
-				str = timeStamp.ToString () + " " + str;
+				str = timeStamp.ToString ("yyyy/mm/dd HH:mm:ss") + " " + str;
 			return str;
 		}
 		#endregion

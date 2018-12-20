@@ -41,6 +41,10 @@ namespace Dullahan.Security
 					}
 					BinaryFormatter formatter = new BinaryFormatter ();
 					repo = (HashSet<Identity>)formatter.Deserialize (fileStream);
+#if DEBUG
+					Console.WriteLine (TAG + " Loaded identities from \"" + RepoDir + "\"");
+					Console.WriteLine (TAG + " Set contains " + repo.Count + " entries");
+#endif
 				}
 			}
 			catch(Exception e)

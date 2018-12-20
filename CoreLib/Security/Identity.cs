@@ -16,6 +16,19 @@ namespace Dullahan.Security
 		public OriginType Origin { get; private set; }
 		#endregion
 
+		#region STATIC_METHODS
+
+		public static bool operator ==(Identity left, Identity right)
+		{
+			return left.Equals (right);
+		}
+
+		public static bool operator !=(Identity left, Identity right)
+		{
+			return !left.Equals (right);
+		}
+		#endregion
+
 		#region INSTANCE_METHODS
 
 		public Identity() : this(Environment.UserDomainName + "/" + Environment.UserName, OriginType.local)

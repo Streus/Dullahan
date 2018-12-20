@@ -15,13 +15,15 @@ namespace Dullahan.Net
 	/// <summary>
 	/// Manages the connection to a Dullahan server/client
 	/// </summary>
-	public class Connection : ILogWriter, ILogReader
+	public class Connection : ILogWriter, ILogReader, IDisposable
 	{
 		#region STATIC_VARS
 
 		public const int DEFAULT_PORT = 8080;
 
 		private const string DEBUG_TAG = "[DULCON]";
+
+		private const string DC_MSG = "dulnet dc";
 		#endregion
 
 		#region INSTANCE_VARS
@@ -106,6 +108,11 @@ namespace Dullahan.Net
 		/// Triggers when a read operation has finished, and data is available for use
 		/// </summary>
 		public event DataReceivedCallback dataRead;
+
+		/// <summary>
+		/// Triggers when this connection is disposed, closing the network pipe
+		/// </summary>
+		public event DisconnectCallback disconnected;
 		#endregion
 
 		#region STATIC_METHODS
@@ -146,6 +153,14 @@ namespace Dullahan.Net
 			sendingCount = 0;
 			identity = new Identity ();
 			otherIdentity = null;
+		}
+
+		~Connection()
+		{
+			Dispose ();
+#if DEBUG
+			Console.WriteLine (DEBUG_TAG + " " + Name + " was culled or closed.");
+#endif
 		}
 
 		/// <summary>
@@ -295,6 +310,16 @@ namespace Dullahan.Net
 				int leftOver = data.Length - bytesRead;
 				Console.WriteLine (DEBUG_TAG + " Finished read (read: " + bytesRead + "B, leftover: " + leftOver + "B)");
 #endif
+				//check for dc packet
+				foreach (Packet p in packets)
+				{
+					if (p.Type == Packet.DataType.command && p.Data == DC_MSG)
+					{
+						Flow = FlowState.none;
+						Dispose ();
+						break;
+					}
+				}
 				return packets;
 			}
 			return null;
@@ -307,10 +332,9 @@ namespace Dullahan.Net
 		{
 			if ((Flow & FlowState.incoming) == FlowState.incoming)
 			{
-				//TODO thread pooling?
-				new Thread (() => {
+				ThreadPool.QueueUserWorkItem ((object data) => {
 #if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Started read thread");
+					Console.WriteLine (DEBUG_TAG + " Started async read #" + (int)data);
 #endif
 					try
 					{
@@ -333,7 +357,13 @@ namespace Dullahan.Net
 					{
 						Console.Error.WriteLine (e.ToString ());
 					}
-				}).Start ();
+					finally
+					{
+#if DEBUG
+						Console.WriteLine (DEBUG_TAG + " Finished async read #" + (int)data);
+#endif
+					}
+				}, readingCount + 1);
 			}
 		}
 
@@ -373,28 +403,16 @@ namespace Dullahan.Net
 		{
 			if ((Flow & FlowState.outgoing) == FlowState.outgoing)
 			{
-				new Thread (() => {
+				ThreadPool.QueueUserWorkItem ((object data) => {
 #if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Started async send");
+					Console.WriteLine (DEBUG_TAG + " Started async send #" + (int)data);
 #endif
 					Send (packet);
 #if DEBUG
-					Console.WriteLine (DEBUG_TAG + " Finished sending");
+					Console.WriteLine (DEBUG_TAG + " Finished async send #" + (int)data);
 #endif
-				}).Start ();
+				}, sendingCount + 1);
 			}
-		}
-
-		public void Disconnect()
-		{
-			netStream.Close ();
-			tcpClient.Close();
-			Sending = Reading = false;
-			Disconnected = true;
-			Flow = FlowState.none;
-#if DEBUG
-			Console.WriteLine (DEBUG_TAG + " Disconnected from " + address.ToString() + ":" + port);
-#endif
 		}
 
 		public override int GetHashCode()
@@ -432,6 +450,18 @@ namespace Dullahan.Net
 
 			return p.Data;
 		}
+
+		public void Dispose()
+		{
+			Send (new Packet (Packet.DataType.command, DC_MSG));
+			tcpClient.Close ();
+			Sending = Reading = false;
+			Disconnected = true;
+			Flow = FlowState.none;
+
+			if (disconnected != null)
+				disconnected (this);
+		}
 		#endregion
 		#endregion
 
@@ -464,6 +494,7 @@ namespace Dullahan.Net
 			bidirectional = outgoing | incoming
 		}
 
+		public delegate void DisconnectCallback(Connection connection);
 		public delegate void DataReceivedCallback(Connection endpoint, Packet data);
 		public delegate bool VerifyTrustCallback(out bool addToTrusted, Identity identity, IPEndPoint endpointInfo);
 		#endregion

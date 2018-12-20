@@ -218,7 +218,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   port: 8080
-  useEncryption: 1
   connectionPolicy: 0
 --- !u!4 &2060024653
 Transform:

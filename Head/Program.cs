@@ -2,15 +2,13 @@
 using Dullahan.Net;
 using Dullahan.Security;
 using System;
-using System.IO;
 using System.Net;
-using System.Reflection;
 using System.Security;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace Dullahan
 {
+	[CommandProvider]
 	internal class Program
 	{
 		#region ARG_FLAGS
@@ -288,8 +286,10 @@ namespace Dullahan
 				client.Start ((out bool addTotrusted, Identity id, IPEndPoint remote) => {
 					Write ("Connecting to an unknown host!", ConsoleColor.Yellow);
 
+					Console.WriteLine ();
 					Console.WriteLine ("IP: " + remote.Address + ":" + remote.Port);
-					Console.WriteLine ("OS User: " + id.Name);
+					Console.WriteLine ("User: " + id.Name);
+					Console.WriteLine ();
 
 					bool allow = false;
 					while (!allow)
@@ -388,6 +388,14 @@ namespace Dullahan
 			}
 			Console.WriteLine ();
 			return password;
+		}
+
+		[Command (Invocation = "exit", Help = "Exits the application, closing connection to the server")]
+		public static int ExitApp(string[] args, Executor env)
+		{
+			env.Out.D ("PROG", "Shutting down...");
+			client.Dispose ();
+			return Executor.EXEC_SUCCESS;
 		}
 
 		#region INTERNAL_TYPES
