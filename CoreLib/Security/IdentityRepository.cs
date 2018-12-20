@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Dullahan.Security
@@ -11,52 +10,68 @@ namespace Dullahan.Security
 		#region STATIC_VARS
 		private const string TAG = "[IDNREP]";
 
+		private const string IDENTITY_REP_FILENAME = "identities.dat";
+
 		private static HashSet<Identity> repo;
+
+		public static bool Loaded { get; private set; }
+		public static bool PendingChanges { get; private set; }
+
+		public static string RepoDir { get; set; }
 		#endregion
 
 		#region STATIC_METHODS
 		static IdentityRepository()
 		{
 			repo = new HashSet<Identity>();
+			Loaded = false;
+			PendingChanges = false;
 		}
 
-		public static bool Load(string path)
+		public static bool Load()
 		{
 			try
 			{
-				using (FileStream fileStream = new FileStream (path, FileMode.OpenOrCreate))
+				using (FileStream fileStream = new FileStream (RepoDir + Path.DirectorySeparatorChar + IDENTITY_REP_FILENAME, FileMode.OpenOrCreate))
 				{
+					if (fileStream.Length <= 0)
+					{
+						//created new empty file; nothing to read
+						return true;
+					}
 					BinaryFormatter formatter = new BinaryFormatter ();
 					repo = (HashSet<Identity>)formatter.Deserialize (fileStream);
 				}
 			}
-			catch(Exception e) when (e is IOException || e is SerializationException)
+			catch(Exception e)
 			{
 #if DEBUG
-				Console.WriteLine (TAG + " Error loading from \"" + path + "\": " + e.ToString ());
+				Console.WriteLine (TAG + " Error loading from \"" + RepoDir + Path.DirectorySeparatorChar + IDENTITY_REP_FILENAME + "\": " + e.ToString ());
 #endif
 				return false;
 			}
+			Loaded = true;
 			return true;
 		}
 
-		public static bool Store(string path)
+		public static bool Store()
 		{
 			try
 			{
-				using (FileStream fileStream = new FileStream (path, FileMode.OpenOrCreate))
+				using (FileStream fileStream = new FileStream (RepoDir + Path.DirectorySeparatorChar + IDENTITY_REP_FILENAME, FileMode.OpenOrCreate))
 				{
 					BinaryFormatter formatter = new BinaryFormatter ();
 					formatter.Serialize (fileStream, repo);
 				}
 			}
-			catch (Exception e) when (e is IOException || e is SerializationException)
+			catch (Exception e)
 			{
 #if DEBUG
-				Console.WriteLine (TAG + " Error storing to \"" + path + "\": " + e.ToString ());
+				Console.WriteLine (TAG + " Error storing to \"" + RepoDir + Path.DirectorySeparatorChar + IDENTITY_REP_FILENAME + "\": " + e.ToString ());
 #endif
 				return false;
 			}
+			PendingChanges = false;
 			return true;
 		}
 
@@ -65,6 +80,7 @@ namespace Dullahan.Security
 #if DEBUG
 			Console.WriteLine (TAG + " Adding " + identity.ToString() + " to trusted set");
 #endif
+			PendingChanges = true;
 			return repo.Add (identity);
 		}
 
@@ -73,6 +89,7 @@ namespace Dullahan.Security
 #if DEBUG
 			Console.WriteLine (TAG + " Removing \"" + identity.ToString () + "\" from trusted set");
 #endif
+			PendingChanges = true;
 			return repo.Remove (identity);
 		}
 
@@ -81,6 +98,7 @@ namespace Dullahan.Security
 #if DEBUG
 			Console.WriteLine (TAG + " Removing identities with Name = \"" + name + "\" from trusted set");
 #endif
+			PendingChanges = true;
 			return 0 <= repo.RemoveWhere ((Identity i) => { return i.Name == name; });
 		}
 

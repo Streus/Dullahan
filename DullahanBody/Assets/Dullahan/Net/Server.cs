@@ -1,7 +1,9 @@
 ﻿using Dullahan.Env;
 using Dullahan.Logging;
+using Dullahan.Security;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -38,12 +40,9 @@ namespace Dullahan.Net
 #endif
 		[Header ("General")]
 		[SerializeField]
-		private int port = Endpoint.DEFAULT_PORT;
+		private int port = Connection.DEFAULT_PORT;
 
 		[Header("Security")]
-		[SerializeField]
-		private bool useEncryption = false;
-
 		[SerializeField]
 		private ConnectionPolicy connectionPolicy = ConnectionPolicy.AskFirst;
 
@@ -129,7 +128,10 @@ namespace Dullahan.Net
 			Executor.Init ();
 
 			//set user directory
-			User.RegistryPath = Application.streamingAssetsPath;
+			User.RegistryPath = Application.persistentDataPath;
+
+			//set identity directory
+			IdentityRepository.RepoDir = Application.persistentDataPath;
 
 			Debug.Log (TAG + " Starting Dullahan Server...");
 			Run();
@@ -160,28 +162,31 @@ namespace Dullahan.Net
 			server.Start();
 			running = true;
 
-			server.BeginAcceptTcpClient (EndpointAcceptCallback, server);
+			server.BeginAcceptTcpClient (ConnectionAcceptCallback, server);
 #if DEBUG
 			Debug.Log (TAG + " Server started; waiting for connections");
 #endif
 		}
 
 		/// <summary>
-		/// Loops waiting for incoming connections, adding a new Endpoint when one is found
+		/// Loops waiting for incoming connections, adding a new Connection when one is found
 		/// </summary>
 		/// <param name="res"></param>
-		private void EndpointAcceptCallback(IAsyncResult res)
+		private void ConnectionAcceptCallback(IAsyncResult res)
 		{
+			server.BeginAcceptTcpClient (ConnectionAcceptCallback, server);
 			try
 			{
 				if (connectionPolicy == ConnectionPolicy.AskFirst)
 				{
 					//TODO ask if can go ahead with connecting
-					return;
+					throw new ConnectionRefusedException ("User chose to refuse connection.");
 				}
 
-				Endpoint c = new Endpoint (server.EndAcceptTcpClient (res));
-				c.Accept (useEncryption, (out bool addTotrusted, X509Certificate2 cert, IPEndPoint client) => {
+				Identity clientId = null;
+				Connection c = new Connection (server.EndAcceptTcpClient (res));
+				c.Accept ((out bool addTotrusted, Identity id, IPEndPoint client) => {
+					clientId = id;
 					addTotrusted = false; //TODO
 					switch (connectionPolicy)
 					{
@@ -195,19 +200,18 @@ namespace Dullahan.Net
 					}
 					return false;
 				});
-				c.Name = Convert.ToBase64String (Guid.NewGuid ().ToByteArray ());
+				c.Name = clientId.Name;
 				c.dataRead += DataReceived;
-				c.Flow = Endpoint.FlowState.bidirectional;
+				c.Flow = Connection.FlowState.bidirectional;
 
-				string identity = c.ConnectionIdentity;
+				//TODO ask for username and password
 
-				User u = User.Load ("User");
-				u.Host = c;
-				u.Environment.SetOutput (c);
-				User.Store (u);
-				users.Add (u);
+				User user = User.Load ("User", "", c);
+				user.Environment.SetOutput (c);
+				User.Store (user);
+				users.Add (user);
 #if DEBUG
-				Debug.Log (TAG + " Added new client.\nName: " + c.Name + "\nHost: " + c.ToString () + "\nEnv: " + u.Environment.ToString ());
+				Debug.Log (TAG + " Added new client.\nName: " + c.Name + "\nHost: " + c.ToString () + "\nEnv: " + user.Environment.ToString ());
 #endif
 				c.ReadAsync ();
 			}
@@ -224,10 +228,6 @@ namespace Dullahan.Net
 #if DEBUG
 				Debug.LogException (e);
 #endif
-			}
-			finally
-			{
-				server.BeginAcceptTcpClient (EndpointAcceptCallback, server);
 			}
 		}
 
@@ -265,7 +265,7 @@ namespace Dullahan.Net
 		/// Received data from a client.
 		/// </summary>
 		/// <param name="packet"></param>
-		private void DataReceived(Endpoint source, Packet packet)
+		private void DataReceived(Connection source, Packet packet)
 		{
 #if DEBUG
 			Debug.Log(TAG + " Received packet.\n" + packet.ToString());

@@ -160,19 +160,7 @@ namespace Dullahan.Net
 				tcpClient.Connect (address, port);
 				netStream = tcpClient.GetStream ();
 
-				Send (new Packet (Packet.DataType.settings, identity.ToString ()));
-				if (WaitForData (TimeSpan.FromSeconds (10)))
-				{
-					Packet p = Read ()[0];
-					otherIdentity = new Identity (p.Data);
-				}
-
-				bool addToTrusted;
-				if (callback (out addToTrusted, identity, (IPEndPoint)tcpClient.Client.RemoteEndPoint))
-				{
-					if (!addToTrusted)
-						identity.Drop ();
-				}
+				Handshake (callback);
 			}
 		}
 
@@ -181,7 +169,68 @@ namespace Dullahan.Net
 		/// </summary>
 		public void Accept(VerifyTrustCallback callback)
 		{
+			Handshake (callback);
+		}
 
+		private void Handshake(VerifyTrustCallback callback)
+		{
+			Send (new Packet (Packet.DataType.settings, identity.ToString ()));
+			if (WaitForData (TimeSpan.FromSeconds (10)))
+			{
+				Packet p = Read ()[0];
+				otherIdentity = new Identity (p.Data);
+			}
+			else
+			{
+				throw new TimeoutException ("Did not receive identity packet");
+			}
+
+			if (!IdentityRepository.Loaded)
+			{
+				if (!IdentityRepository.Load ())
+				{
+					throw new IOException ("Failed to load identites from \"" + IdentityRepository.RepoDir + "\"");
+				}
+			}
+
+			bool addToTrusted;
+			if (!IdentityRepository.CheckTrusted (otherIdentity))
+			{
+				if (callback (out addToTrusted, otherIdentity, (IPEndPoint)tcpClient.Client.RemoteEndPoint))
+				{
+					if (!addToTrusted)
+						otherIdentity.Drop ();
+					else
+					{
+						IdentityRepository.AddTrusted (otherIdentity);
+						IdentityRepository.Store ();
+					}
+
+					Send (new Packet (Packet.DataType.response, "0"));
+				}
+				else
+				{
+					Send (new Packet (Packet.DataType.response, "1"));
+					throw new ConnectionRefusedException ("User refused connection");
+				}
+			}
+
+			if (WaitForData (TimeSpan.FromMinutes(5)))
+			{
+				Packet p = Read ()[0];
+				int response;
+				if (int.TryParse (p.Data, out response))
+				{
+					if (response != 0)
+						throw new ConnectionRefusedException ("Remote refused connection");
+				}
+			}
+			else
+			{
+				string message = "Timed out waiting for connection acknowledge";
+				Send (new Packet (Packet.DataType.response, Log.TAG_TYPE_ERROR, message));
+				throw new TimeoutException (message);
+			}
 		}
 
 		public bool HasPendingData()

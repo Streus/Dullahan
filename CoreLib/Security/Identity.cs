@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -19,7 +18,14 @@ namespace Dullahan.Security
 
 		#region INSTANCE_METHODS
 
-		public Identity() : this(Environment.UserDomainName + "/" + Environment.UserName, OriginType.local) { }
+		public Identity() : this(Environment.UserDomainName + "/" + Environment.UserName, OriginType.local)
+		{
+			//needs to be done to make keypair?
+			using (RSACryptoServiceProvider keypair = new RSACryptoServiceProvider (container))
+			{
+				keypair.PersistKeyInCsp = true;
+			}
+		}
 
 		public Identity(string blob) : this("", OriginType.remote)
 		{
@@ -44,7 +50,7 @@ namespace Dullahan.Security
 			}
 		}
 
-		public Identity(string name, OriginType origin)
+		private Identity(string name, OriginType origin)
 		{
 			Name = name;
 			Origin = origin;
@@ -52,7 +58,7 @@ namespace Dullahan.Security
 			container = new CspParameters ()
 			{
 				KeyContainerName = Name,
-				Flags = CspProviderFlags.UseMachineKeyStore
+				Flags = CspProviderFlags.NoPrompt | CspProviderFlags.UseDefaultKeyContainer
 			};
 		}
 

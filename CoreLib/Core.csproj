@@ -54,6 +54,7 @@
     <Compile Include="Logging\Log.cs" />
     <Compile Include="Logging\Message.cs" />
     <Compile Include="Net\Connection.cs" />
+    <Compile Include="Net\ConnectionRefusedException.cs" />
     <Compile Include="Net\Packet.cs" />
     <Compile Include="Env\Executor.cs" />
     <Compile Include="Security\Identity.cs" />

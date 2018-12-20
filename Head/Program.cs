@@ -1,6 +1,8 @@
 ﻿using Dullahan.Env;
 using Dullahan.Net;
+using Dullahan.Security;
 using System;
+using System.IO;
 using System.Net;
 using System.Reflection;
 using System.Security;
@@ -32,6 +34,7 @@ namespace Dullahan
 #if DEBUG
 		private const string DEBUG_TAG = "[PROG]";
 #endif
+		
 		#endregion
 
 		#region STATIC_VARS
@@ -50,11 +53,13 @@ namespace Dullahan
 			Initialize (args);
 
 			Executor.Init();
-			User.RegistryPath = Assembly.GetEntryAssembly ().CodeBase;
-			env = Executor.Build ("user");
+			User.RegistryPath = AppDomain.CurrentDomain.BaseDirectory;
+			env = Executor.Build ("local");
 			redir = new ConsoleRedirector ();
-			env.SetOutput (redir); //TODO executor redirect class
+			env.SetOutput (redir);
 			env.SetInput (redir);
+
+			IdentityRepository.RepoDir = AppDomain.CurrentDomain.BaseDirectory;
 
 			Connect ();
 			client.Flow = Connection.FlowState.outgoing;
@@ -280,11 +285,11 @@ namespace Dullahan
 			client = new Connection (addr, port);
 			try
 			{
-				client.Start ((out bool addTotrusted, X509Certificate2 cert, IPEndPoint remote) => {
+				client.Start ((out bool addTotrusted, Identity id, IPEndPoint remote) => {
 					Write ("Connecting to an unknown host!", ConsoleColor.Yellow);
 
 					Console.WriteLine ("IP: " + remote.Address + ":" + remote.Port);
-					Console.WriteLine ("OS User: " + cert.Subject);
+					Console.WriteLine ("OS User: " + id.Name);
 
 					bool allow = false;
 					while (!allow)
@@ -297,12 +302,14 @@ namespace Dullahan
 							break;
 						case ConsoleKey.N:
 							addTotrusted = false;
+							Console.WriteLine ();
 							return false;
 						default:
 							Console.WriteLine ("\nPlease Enter y or n.");
 							break;
 						}
 					}
+					Console.WriteLine ();
 
 					while (true)
 					{
@@ -311,9 +318,11 @@ namespace Dullahan
 						{
 						case ConsoleKey.Y:
 							addTotrusted = true;
+							Console.WriteLine ();
 							return true;
 						case ConsoleKey.N:
 							addTotrusted = false;
+							Console.WriteLine ();
 							return true;
 						default:
 							Console.WriteLine ("\nPlease Enter y or n.");

@@ -168,7 +168,7 @@ namespace Dullahan.Net
 			if (Type == DataType.logentry)
 			{
 				//time stamp, 8 bytes
-				byteList.AddRange (BitConverter.GetBytes (timeStamp.ToBinary()));
+				byteList.AddRange (BitConverter.GetBytes (timeStamp.Ticks));
 			}
 
 			//tags count, 4 bytes
