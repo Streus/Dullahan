@@ -4,7 +4,7 @@ namespace Dullahan.Env
 	/// <summary>
 	/// Simple binder for command data
 	/// </summary>
-	public  class Command
+	public class Command
 	{
 		public string invocation;
 		public CommandDelegate function;
